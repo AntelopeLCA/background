@@ -282,7 +282,7 @@ class BackgroundEngine(object):
         else:
             if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
                 return None
-            terms = [t for t in self.fg.terminate(exch.flow, direction=exch.direction)]
+            terms = [t for t in self.fg.targets(exch.flow, direction=exch.direction)]
             if len(terms) == 0:
                 return None
             elif len(terms) == 1:

@@ -150,9 +150,15 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         process, ref_flow = self._check_ref(process, ref_flow)
         return self._flat.is_in_background(process, ref_flow)
 
-    def foreground(self, process, ref_flow=None, **kwargs):
+    def foreground(self, process, ref_flow=None, exterior=False, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        for x in self._flat.foreground(process, ref_flow):
+        # parse args-- if exterior is True, force cutoffs and emissions to true
+        # if exterior:
+        #     cutoffs = emissions = exterior
+        # else:  # otherwise, if user specifies either cutoffs or emissions, exterior is flipped to True
+        #     exterior |= bool(cutoffs or emissions)
+        for x in self._flat.foreground(process, ref_flow, exterior=exterior):
+            # to filter cutoffs vs emissions, first need to detect if x is an exterior exchange-- which we don't know how to do just yet
             yield ExchangeValue(self[x.process], self[x.flow], x.direction, termination=x.term, value=x.value)
 
     def _direct_exchanges(self, node, x_iter, context=False):
@@ -167,6 +173,13 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         process, ref_flow = self._check_ref(process, ref_flow)
         for x in self._flat.consumers(process, ref_flow):
             yield self._exchange_from_term_ref(x)
+
+    def product_models(self, **kwargs):
+        for fgf in self.foreground_flows(**kwargs):
+            try:
+                next(self.consumers(fgf.process, fgf.flow))
+            except StopIteration:
+                yield fgf
 
     def dependencies(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)

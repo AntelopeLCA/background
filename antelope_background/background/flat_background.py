@@ -348,7 +348,7 @@ class FlatBackground(object):
     def is_in_background(self, process, ref_flow):
         return (process, ref_flow) in self._bg_index
 
-    def foreground(self, process, ref_flow, traverse=False):
+    def foreground(self, process, ref_flow, traverse=False, exterior=False):
         """
         Most of the way toward making exchanges. yields a sequence of 5-tuples defining terminated exchanges.
 
@@ -365,6 +365,7 @@ class FlatBackground(object):
         :param traverse: [False] if True, generate one exchange for every traversal link. Default is to create one
         exchange for every matrix entry.  traverse=True will produce duplicate exchanges in cases where sub-fragments
         are traversed multiple times.
+        :param exterior: [False] return entries for exterior flows
         :return:
         """
         if _FLATTEN_AF is False and traverse is True:
@@ -400,6 +401,15 @@ class FlatBackground(object):
                 else:
                     dirn = comp_dir(term.direction)  # comp directions w.r.t. parent node
                 yield ExchDef(node.term_ref, term.flow_ref, dirn, term.term_ref, dat)
+
+            bg_deps = self._ad[:, current]
+            for dep in self._generate_exch_defs(node.term_ref, bg_deps, self._bg):
+                yield dep
+
+            if exterior:
+                ems = self._bf[:, current]
+                for ext in self._generate_em_defs(node.term_ref, ems, self._ex):
+                    yield ext
 
     @staticmethod
     def _generate_exch_defs(node_ref, data_vec, enumeration):
