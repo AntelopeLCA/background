@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 requires = [
     "antelope_core",
@@ -17,5 +17,5 @@ setup(
     url="https://github.com/AntelopeLCA/background",
     summary="A background LCI implementation that performs a partial ordering of LCI databases",
     long_description=open('README.md').read(),
-    packages=['antelope_background']
+    packages=find_packages()
 )
