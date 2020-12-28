@@ -1,3 +1,4 @@
+from antelope_core.contexts import NullContext
 
 
 class Emission(object):
@@ -13,11 +14,12 @@ class Emission(object):
 
         :param flow: the LcFlow entity that represents the commodity (term_flow in the fragment sense)
         :param direction: the direction of the exchange
+        :param context: the terminating context of the exchange (None replaced with NullContext)
         """
         self._index = index
         self._flow = flow
         self._direction = direction
-        self._context = context
+        self._context = context or NullContext
 
         self._hash = (flow.external_ref, direction, self._context)
 
@@ -57,9 +59,7 @@ class Emission(object):
 
     @property
     def context(self):
-        if self._context is None:
-            return None
-        return self._context.name
+        return self._context
 
     @property
     def direction(self):

@@ -9,11 +9,12 @@ from scipy.sparse import eye
 from scipy.io import savemat, loadmat
 
 import os
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 
-from antelope import CONTEXT_STATUS_, comp_dir
+from antelope_interface import CONTEXT_STATUS_, comp_dir
 from ..engine import BackgroundEngine
 from antelope_core import from_json, to_json
+from antelope_core.contexts import Context
 
 
 SUPPORTED_FILETYPES = ('.mat', )
@@ -212,7 +213,7 @@ class FlatBackground(object):
             return em.flow.external_ref, comp_dir(em.direction), comp, 0
             >>>>>>> preferred_product
             '''
-            return em.flow.external_ref, comp_dir(em.direction), em.context, 0
+            return em.flow.external_ref, comp_dir(em.direction), '; '.join(em.context.as_list()), 0
 
         return cls([_make_term_ref(x) for x in be.foreground_flows(outputs=False)],
                    [_make_term_ref(x) for x in be.background_flows()],
@@ -295,7 +296,7 @@ class FlatBackground(object):
 
         self._fg_index = {(k.term_ref, k.flow_ref): i for i, k in enumerate(self._fg)}
         self._bg_index = {(k.term_ref, k.flow_ref): i for i, k in enumerate(self._bg)}
-        self._ex_index = {(k.term_ref, k.flow_ref): i for i, k in enumerate(self._ex)}
+        self._ex_index = {(k.term_ref, k.flow_ref, k.direction): i for i, k in enumerate(self._ex)}
 
         self._quiet = quiet
 
@@ -305,8 +306,6 @@ class FlatBackground(object):
             return self._fg_index[key]
         elif key in self._bg_index:
             return self._bg_index[key]
-        elif key in self._ex_index:
-            return self._ex_index[key]
         else:
             raise KeyError('Unknown termination %s, %s' % key)
 
@@ -408,7 +407,7 @@ class FlatBackground(object):
 
             if exterior:
                 ems = self._bf[:, current]
-                for ext in self._generate_em_defs(node.term_ref, ems, self._ex):
+                for ext in self._generate_em_defs(node.term_ref, ems):
                     yield ext
 
     @staticmethod
@@ -425,19 +424,17 @@ class FlatBackground(object):
                 dirn = comp_dir(term.direction)
             yield ExchDef(node_ref, term.flow_ref, dirn, term.term_ref, dat)
 
-    @staticmethod
-    def _generate_em_defs(node_ref, data_vec, enumeration):
+    def _generate_em_defs(self, node_ref, data_vec):
         """
         Emissions have a natural direction which should not be changed.
         :param node_ref:
         :param data_vec:
-        :param enumeration:
         :return:
         """
         rows, cols = data_vec.nonzero()
         assert all(cols == 0)
         for i in range(len(rows)):
-            term = enumeration[rows[i]]
+            term = self._ex[rows[i]]
             dat = data_vec.data[i]
             dirn = comp_dir(term.direction)
             if CONTEXT_STATUS_ == 'compat':
@@ -473,7 +470,7 @@ class FlatBackground(object):
         for x in self._generate_exch_defs(process, bg_deps, self._bg):
             yield x
 
-    def emissions(self, process, ref_flow):
+    def exterior(self, process, ref_flow):
         if self.is_in_background(process, ref_flow):
             index = self._bg_index[process, ref_flow]
             ems = self._B[:, index]
@@ -481,7 +478,7 @@ class FlatBackground(object):
             index = self._fg_index[process, ref_flow]
             ems = self._bf[:, index]
 
-        for x in self._generate_em_defs(process, ems, self._ex):
+        for x in self._generate_em_defs(process, ems):
             yield x
 
     def _x_tilde(self, process, ref_flow, quiet=True, **kwargs):
@@ -499,11 +496,11 @@ class FlatBackground(object):
 
     def bf(self, process, ref_flow, **kwargs):
         if self.is_in_background(process, ref_flow):
-            for x in self.emissions(process, ref_flow):
+            for x in self.exterior(process, ref_flow):
                 yield x
         else:
             bf_tilde = self._bf.dot(self._x_tilde(process, ref_flow, **kwargs))
-            for x in self._generate_em_defs(process, bf_tilde, self._ex):
+            for x in self._generate_em_defs(process, bf_tilde):
                 yield x
 
     def _compute_bg_lci(self, ad, solver=None, **kwargs):
@@ -536,9 +533,69 @@ class FlatBackground(object):
 
     def lci(self, process, ref_flow, **kwargs):
         for x in self._generate_em_defs(process,
-                                        self._compute_lci(process, ref_flow, **kwargs),
-                                        self._ex):
+                                        self._compute_lci(process, ref_flow, **kwargs)):
             yield x
+
+    @staticmethod
+    def _check_dirn(term_ref, exch):
+        if comp_dir(exch.direction) == term_ref.direction:
+            return 1
+        return -1
+
+    def sys_lci(self, demand, **kwargs):
+        """
+
+        :param demand: an iterable of exchanges, each of which must be mapped to a foreground, interior, or exterior
+        TermRef
+        :return:
+        """
+        data = defaultdict(list)
+        for x in demand:
+            if isinstance(x.termination, Context):
+                key = ('; '.join(x.termination.as_list()), x.flow.external_ref, comp_dir(x.direction))
+                try:
+                    ind = self._ex_index[key]
+                    data['ex_ind'].append(ind)
+                    data['ex_val'].append(x.value * self._check_dirn(self._ex[ind], x))
+                except KeyError:
+                    data['missed'].append(x)
+            elif x.termination is None:
+                data['missed'].append(x)
+            else:
+                key = (x.termination, x.flow.external_ref)
+                if key in self._fg_index:
+                    ind = self._fg_index[key]
+                    data['fg_ind'].append(ind)
+                    data['fg_val'].append(x.value * self._check_dirn(self._fg[ind], x))
+                elif key in self._bg_index:
+                    ind = self._bg_index[key]
+                    data['bg_ind'].append(ind)
+                    data['bg_val'].append(x.value * self._check_dirn(self._bg[ind], x))
+                else:
+                    data['missed'].append(x)
+
+        # compute ad_tilde  # csr_matrix(((1,), ((inx,), (0,))), shape=(dim, 1))
+        x_dmd = csr_matrix((data['fg_val'], (data['fg_ind'], [0]*len(data['fg_ind']))), shape=(self.pdim, 1))
+        x_tilde = _iterate_a_matrix(self._af, x_dmd, **kwargs)
+        ad_tilde = self._ad.dot(x_tilde).todense()
+        bf_tilde = self._bf.dot(x_tilde).todense()
+
+        # consolidate bg dependencies
+        for i in range(len(data['bg_ind'])):
+            ad_tilde[data['bg_ind'][i]] += data['bg_val'][i]
+
+        # compute b
+        bx = self._compute_bg_lci(ad_tilde, **kwargs) + bf_tilde
+
+        # consolidate direct emissions
+        for i in range(len(data['ex_ind'])):
+            bx[data['ex_ind'][i]] += data['ex_val'][i]
+
+        for x in self._generate_em_defs(None, csr_matrix(bx)):
+            yield x
+
+        for x in data['missed']:
+            yield ExchDef(None, x.flow, x.direction, x.termination, x.value)
 
     def _write_index(self, ix_filename):
         ix = {'foreground': [tuple(f) for f in self._fg],

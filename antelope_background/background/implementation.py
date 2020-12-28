@@ -1,6 +1,7 @@
 from antelope_core.implementations import BackgroundImplementation
-from antelope import ExteriorFlow
+from antelope_interface import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
+from antelope_core.contexts import Context
 
 from .flat_background import FlatBackground
 
@@ -188,9 +189,22 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             yield x
 
     def emissions(self, process, ref_flow=None, **kwargs):
+        for x in self._exterior(process, ref_flow=ref_flow):
+            if isinstance(x.termination, Context):
+                if x.termination.elementary:
+                    yield x
+
+    def cutoffs(self, process, ref_flow=None, **kwargs):
+        for x in self._exterior(process, ref_flow=ref_flow):
+            if isinstance(x.termination, Context):
+                if x.termination.elementary:
+                    continue
+            yield x
+
+    def _exterior(self, process, ref_flow=None):
         process, ref_flow = self._check_ref(process, ref_flow)
         node = self[process]
-        for x in self._direct_exchanges(node, self._flat.emissions(process, ref_flow), context=True):
+        for x in self._direct_exchanges(node, self._flat.exterior(process, ref_flow), context=True):
             yield x
 
     def ad(self, process, ref_flow=None, **kwargs):
@@ -210,3 +224,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         node = self[process]
         for x in self._direct_exchanges(node, self._flat.lci(process, ref_flow, **kwargs), context=True):
             yield x
+
+    def sys_lci(self, node, demand, **kwargs):
+        for x in self._direct_exchanges(node, self._flat.sys_lci(demand), context=True):
+            yield x
+

@@ -12,7 +12,7 @@ import re  # for product_flows search
 import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix
 
-from antelope import comp_dir
+from antelope_interface import comp_dir
 
 from .tarjan_stack import TarjanStack
 from .product_flow import ProductFlow, NoMatchingReference
@@ -655,7 +655,8 @@ class BackgroundEngine(object):
                 # not visited -- need to visit
                 i = self._create_product_flow(exch.flow, term)
                 if i is None:
-                    print('Cutting off at Parent process: %s\n%s\n' % (parent.process.external_ref, parent))
+                    print('Cutting off at Parent process: %s\n%s %s\n' % (parent.process.external_ref, exch.flow.link,
+                                                                          term))
                     continue
                 if i.debug:
                     print('Parent: %s' % parent.process)
