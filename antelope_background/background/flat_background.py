@@ -11,7 +11,7 @@ from scipy.io import savemat, loadmat
 import os
 from collections import namedtuple, defaultdict
 
-from antelope_interface import CONTEXT_STATUS_, comp_dir
+from antelope import CONTEXT_STATUS_, comp_dir
 from ..engine import BackgroundEngine
 from antelope_core import from_json, to_json
 from antelope_core.contexts import Context

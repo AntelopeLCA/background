@@ -1,5 +1,5 @@
 from antelope_core.implementations import BackgroundImplementation
-from antelope_interface import ExteriorFlow
+from antelope import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
 
