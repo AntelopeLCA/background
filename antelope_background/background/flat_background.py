@@ -542,7 +542,7 @@ class FlatBackground(object):
             return 1
         return -1
 
-    def sys_lci(self, demand, **kwargs):
+    def sys_lci(self, demand, quiet=None, **kwargs):
         """
 
         :param demand: an iterable of exchanges, each of which must be mapped to a foreground, interior, or exterior
@@ -576,7 +576,7 @@ class FlatBackground(object):
 
         # compute ad_tilde  # csr_matrix(((1,), ((inx,), (0,))), shape=(dim, 1))
         x_dmd = csr_matrix((data['fg_val'], (data['fg_ind'], [0]*len(data['fg_ind']))), shape=(self.pdim, 1))
-        x_tilde = _iterate_a_matrix(self._af, x_dmd, **kwargs)
+        x_tilde = _iterate_a_matrix(self._af, x_dmd, quiet=True, **kwargs)
         ad_tilde = self._ad.dot(x_tilde).todense()
         bf_tilde = self._bf.dot(x_tilde).todense()
 
@@ -585,7 +585,7 @@ class FlatBackground(object):
             ad_tilde[data['bg_ind'][i]] += data['bg_val'][i]
 
         # compute b
-        bx = self._compute_bg_lci(ad_tilde, **kwargs) + bf_tilde
+        bx = self._compute_bg_lci(ad_tilde, quiet=quiet, **kwargs) + bf_tilde
 
         # consolidate direct emissions
         for i in range(len(data['ex_ind'])):

@@ -226,6 +226,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             yield x
 
     def sys_lci(self, node, demand, **kwargs):
+        self.check_bg()
         for x in self._direct_exchanges(node, self._flat.sys_lci(demand), context=True):
             yield x
 
