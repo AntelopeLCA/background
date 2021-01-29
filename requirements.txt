@@ -1,3 +1,3 @@
-antelope-core>=0.1.2
+antelope-core>=0.1.4
 scipy>=1.5
 numpy>=1.19
