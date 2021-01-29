@@ -208,9 +208,9 @@ class BackgroundEngine(object):
                 if z is pf:
                     break
                 self._print('--!removing %s' % z)
-            while self._interior_incoming[-1].parent is pf:
+            while self._interior_incoming and self._interior_incoming[-1].parent is pf:
                 self._interior_incoming.pop()
-            while self._cutoff_incoming[-1].parent is pf:
+            while self._cutoff_incoming and self._cutoff_incoming[-1].parent is pf:
                 self._cutoff_incoming.pop()
             if pf is bad_pf:
                 break
