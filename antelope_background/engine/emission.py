@@ -1,4 +1,3 @@
-from antelope_core.contexts import NullContext
 
 
 class Emission(object):
@@ -19,9 +18,9 @@ class Emission(object):
         self._index = index
         self._flow = flow
         self._direction = direction
-        self._context = context or NullContext
+        self._context = context
 
-        self._hash = (flow.external_ref, direction, self._context)
+        self._key = (flow.external_ref, direction, context)
 
     def __eq__(self, other):
         """
@@ -35,7 +34,7 @@ class Emission(object):
         # return self.flow == other.flow and self.process == other.process
 
     def __hash__(self):
-        return hash(self._hash)
+        return hash(self._key)
 
     @property
     def entity_type(self):
@@ -51,7 +50,7 @@ class Emission(object):
         Key is (uuid of flow, direction relative to 'emitting' process)
         :return:
         """
-        return self._hash
+        return self._key
 
     @property
     def flow(self):

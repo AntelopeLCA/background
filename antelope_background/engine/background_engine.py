@@ -10,9 +10,10 @@ import sys  # for recursion limit
 import re  # for product_flows search
 
 import numpy as np
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csr_matrix  # , csc_matrix,
 
 from antelope import comp_dir
+from antelope_core.contexts import NullContext
 
 from .tarjan_stack import TarjanStack
 from .product_flow import ProductFlow, NoMatchingReference
@@ -259,12 +260,13 @@ class BackgroundEngine(object):
         return pf
 
     def _add_emission(self, flow, direction, context):
-        key = (flow.external_ref, direction, context)
+        cx = context or NullContext
+        key = (flow.external_ref, direction, cx)
         if key in self._emissions:
             return self._ef_index[self._emissions[key]]
         else:
             index = len(self._ef_index)
-            ef = Emission(index, flow, direction, context)
+            ef = Emission(index, flow, direction, cx)
             self._emissions[ef.key] = index
             self._ef_index.append(ef)
             return ef
