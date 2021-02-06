@@ -14,6 +14,14 @@ Databases](https://doi.org/10.1007/s11367-015-0972-x))
 It performs the ordering, and then builds and stores a static LCI database (A and B matrices).  
 This code is a bit convoluted, but it works.
 
+#### (Muttered question from the audience)
+
+No, it isn't tested. Tests have been performed (and passed).
+
+#### (indistinct grumbling)
+
+I know. I'm sorry.
+
 ## Installing
 
 Installation should be straightforward-- `lxml` is required here to access a local copy of ecoinvent.
