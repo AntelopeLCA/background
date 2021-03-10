@@ -163,6 +163,13 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             yield ExchangeValue(self[x.process], self[x.flow], x.direction, termination=x.term, value=x.value)
 
     def _direct_exchanges(self, node, x_iter, context=False):
+        """
+        This expects an iterable of ExchDefs, which are clearly redundant (only used for this)
+        :param node:
+        :param x_iter:
+        :param context:
+        :return:
+        """
         for x in x_iter:
             if context is True:
                 term = self._index.get_context(x.term)

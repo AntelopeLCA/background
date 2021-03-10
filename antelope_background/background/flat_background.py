@@ -201,6 +201,10 @@ class FlatBackground(object):
 
         def _make_term_ext(em):
             """
+            Here we decide to store contexts as '; '-concatenated strings -- which we must do bc it is serializable
+
+            gets undone in generate_em_defs which indicates we should use a method of TermRef to produce the ExchDef
+            middleman
 
             :param em:
             :return:
@@ -440,7 +444,7 @@ class FlatBackground(object):
             if CONTEXT_STATUS_ == 'compat':
                 _term = None
             else:
-                _term = term.term_ref
+                _term = tuple(term.term_ref.split('; '))  # here we undo the ';'-join
             yield ExchDef(node_ref, term.flow_ref, dirn, _term, dat)
 
     def consumers(self, process, ref_flow):
