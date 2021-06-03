@@ -11,7 +11,7 @@ from scipy.io import savemat, loadmat
 import os
 from collections import namedtuple, defaultdict
 
-from antelope import CONTEXT_STATUS_, comp_dir
+from antelope import CONTEXT_STATUS_, comp_dir  # , num_dir
 from ..engine import BackgroundEngine
 from antelope_core import from_json, to_json
 from antelope_core.contexts import Context
@@ -37,6 +37,7 @@ class TermRef(object):
         """
         self._f = str(flow_ref)  # some flows were serialized with integer refs...
         self._d = {'Input': 0, 'Output': 1, 0: 0, 1: 1}[direction]
+        # self._d = num_dir(direction)
         self._t = term_ref
         self._s = 0
         self.scc_id = scc_id
@@ -166,6 +167,7 @@ def flatten(af, ad, bf, ts):
 
     return non * scc_inv, ad * scc_inv, bf * scc_inv
 
+ORDERING_SUFFIX = '.ordering.json.gz'
 
 class FlatBackground(object):
     """
@@ -248,7 +250,10 @@ class FlatBackground(object):
         else:
             lci_db = None
 
-        ix = from_json(file + '.index.json.gz')
+        try:
+            ordr = from_json(file + ORDERING_SUFFIX)
+        except FileNotFoundError:  # legacy
+            ordr = from_json(file + '.index.json.gz')
 
         '''
         def _unpack_term_ref(arr):
@@ -264,7 +269,7 @@ class FlatBackground(object):
                    lci_db=lci_db,
                    quiet=quiet)
         '''
-        return cls(ix['foreground'], ix['background'], ix['exterior'],
+        return cls(ordr['foreground'], ordr['background'], ordr['exterior'],
                    d['Af'].tocsr(), d['Ad'].tocsr(), d['Bf'].tocsr(),
                    lci_db=lci_db,
                    quiet=quiet)
@@ -601,11 +606,14 @@ class FlatBackground(object):
         for x in data['missed']:
             yield ExchDef(None, x.flow, x.direction, x.termination, x.value)
 
-    def _write_index(self, ix_filename):
-        ix = {'foreground': [tuple(f) for f in self._fg],
-              'background': [tuple(f) for f in self._bg],
-              'exterior': [tuple(f) for f in self._ex]}
-        to_json(ix, ix_filename, gzip=True)
+    def _write_ordering(self, filename):
+        if not filename.endswith(ORDERING_SUFFIX):
+            filename += ORDERING_SUFFIX
+
+        ordr = {'foreground': [tuple(f) for f in self._fg],
+                'background': [tuple(f) for f in self._bg],
+                'exterior': [tuple(f) for f in self._ex]}
+        to_json(ordr, filename, gzip=True)
 
     def _write_mat(self, filename, complete=True):
         d = {'Af': csr_matrix((self.pdim, self.pdim)) if self._af is None else self._af,
@@ -617,6 +625,8 @@ class FlatBackground(object):
         savemat(filename, d)
 
     def write_to_file(self, filename, complete=True):
+        if filename.endswith(ORDERING_SUFFIX):
+            filename = filename[:-len(ORDERING_SUFFIX)]
         filetype = os.path.splitext(filename)[1]
         if filetype not in SUPPORTED_FILETYPES:
             raise ValueError('Unsupported file type %s' % filetype)
@@ -624,4 +634,4 @@ class FlatBackground(object):
             self._write_mat(filename, complete=complete)
         else:
             raise ValueError('Unsupported file type %s' % filetype)
-        self._write_index(filename + '.index.json.gz')
+        self._write_ordering(filename)
