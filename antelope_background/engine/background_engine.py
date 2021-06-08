@@ -116,7 +116,8 @@ class BackgroundEngine(object):
         """
         """
         self.fg = index_interface
-        self.preferred_processes = []  # use to resolve termination errors. should be a list of
+        self.preferred_processes = dict()  # use to resolve termination errors. dict of flow_ref -> process
+        self.missing_references = []
         self._quiet = quiet
         self._lowlinks = dict()  # dict mapping product_flow key to lowlink -- which is a key into TarjanStack.sccs
 
@@ -255,6 +256,8 @@ class BackgroundEngine(object):
             pf = ProductFlow(index, flow, term)
         except NoMatchingReference:
             print('### !!! NO MATCHING REFERENCE !!! ###')  # fix this if it comes up again
+            if (term.external_ref, flow.external_ref) not in self.missing_references:
+                self.missing_references.append((term.external_ref, flow.external_ref))
             return None
         self._add_product_flow(pf)
         return pf
@@ -274,7 +277,9 @@ class BackgroundEngine(object):
     def terminate(self, exch, strategy):
         """
         Find the ProductFlow that terminates a given exchange.  If an exchange has an explicit termination, use it.
-        Otherwise, consult a local cache; and ask the archive [slow] if the cache is not populated.
+        Else if flow / direction / term are already seen, use it.
+        Else if flow is found in list of preferred providers, use designated provider (None -> cutoff)
+        lastly, ask archive for valid targets. If this list has length != 1, defer to designated strategy or raise error
         :param exch:
         :param strategy:
         :return:
@@ -284,17 +289,22 @@ class BackgroundEngine(object):
         else:
             if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
                 return None
+            if exch.flow.external_ref in self.preferred_processes:
+                term = self.preferred_processes[exch.flow.external_ref]
+                if term is None:
+                    return None
+                if not hasattr(term, 'entity_type'):
+                    term = self.fg.get(term)
+                if term.entity_type != 'process':
+                    raise TypeError('%s: Bad preferred provider %s' % (exch.flow.external_ref, term))
+                return term
+
             terms = [t for t in self.fg.targets(exch.flow, direction=exch.direction)]
             if len(terms) == 0:
                 return None
             elif len(terms) == 1:
                 term = terms[0]
             else:
-                for pref in self.preferred_processes:
-                    # sequential to allow ordering by preference
-                    if pref in terms:
-                        return pref
-
                 if strategy == 'abort':
                     print('flow: %s\nAmbiguous termination found for %s: %s' % (exch.flow.external_ref,
                                                                                 exch.direction, exch.flow))
@@ -552,13 +562,28 @@ class BackgroundEngine(object):
         if self.mdim > self._b_matrix.shape[0]:
             self._pad_b_matrix()
 
+        for k in self.missing_references:
+            print('Missing reference (term:%s;flow:%s)' % k)
+        self.missing_references = []
+
         # self.make_foreground()
 
     def add_all_ref_products(self, multi_term='abort', default_allocation=None, prefer=None):
         if self._all_added:
             return
         if prefer is not None:
-            self.preferred_processes = prefer
+            if isinstance(prefer, dict):
+                for k, v in prefer.items():
+                    if hasattr(k, 'external_ref'):
+                        k = k.external_ref
+                    self.preferred_processes[k] = v
+            elif isinstance(prefer, tuple):
+                for k, v in prefer:
+                    if hasattr(k, 'external_ref'):
+                        k = k.external_ref
+                    self.preferred_processes[k] = v
+            else:
+                raise TypeError('Unable to interpret preferred process specification %s' % prefer)
         for p in self.fg.processes():
             for x in p.references():
                 j = self.check_product_flow(x.flow, p)

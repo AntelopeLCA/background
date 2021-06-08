@@ -1,3 +1,6 @@
+from antelope_core.entities.processes import NoExchangeFound
+
+
 class NoMatchingReference(Exception):
     pass
 
@@ -39,7 +42,7 @@ class ProductFlow(object):
 
         try:
             ref_exch = process.reference(flow)
-        except KeyError:
+        except (KeyError, NoExchangeFound):
             print('##! flow %s - termination %s : no reference found!##' % self._hash)
             raise NoMatchingReference
 

@@ -1,4 +1,4 @@
-from antelope_core.implementations import BackgroundImplementation
+from antelope_core.implementations import BackgroundImplementation, CoreConfigureImplementation
 from antelope import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
@@ -81,7 +81,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             if hasattr(self._archive, 'create_flat_background'):
                 self._flat = self._archive.create_flat_background(self._index, **kwargs)
             else:
-                self._flat = FlatBackground.from_index(self._index, **kwargs)
+                raise AssertionError  # how would we ever get here?
+                # self._flat = FlatBackground.from_index(self._index, **kwargs)
         return True
 
     def _check_ref(self, arg, opt_arg):
@@ -236,4 +237,12 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         self.check_bg()
         for x in self._direct_exchanges(node, self._flat.sys_lci(demand), context=True):
             yield x
+
+
+class TarjanConfigureImplementation(CoreConfigureImplementation):
+    _config_options = ('prefer_provider',)
+
+    def prefer_provider(self, flow_ref, process_ref=None):
+        self._archive.prefer(flow_ref, process_ref)
+
 

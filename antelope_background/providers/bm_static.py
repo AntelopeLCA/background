@@ -7,13 +7,14 @@ import time
 
 from antelope_core.archives import LcArchive, InterfaceError
 from ..background.flat_background import FlatBackground, SUPPORTED_FILETYPES, ORDERING_SUFFIX
-from ..background.implementation import TarjanBackgroundImplementation
+from ..background.implementation import TarjanBackgroundImplementation, TarjanConfigureImplementation
 
 
 class TarjanBackground(LcArchive):
 
     def __init__(self, source, save_after=False, **kwargs):
         self._save_after = save_after
+        self._prefer = dict()
         if source.endswith(ORDERING_SUFFIX):
             source = source[:-len(ORDERING_SUFFIX)]  # prevent us from trying to instantiate from the ordering file
 
@@ -33,13 +34,18 @@ class TarjanBackground(LcArchive):
         else:
             self._flat = None
 
+    def prefer(self, flow, process):
+        self._prefer[flow] = process
+
     def make_interface(self, iface, privacy=None):
         if iface == 'background':
             return TarjanBackgroundImplementation(self)
+        elif iface == 'configure':
+            return TarjanConfigureImplementation(self)
         else:
-            raise InterfaceError('%s: This class can only implement the background interface' % iface)
+            raise InterfaceError(iface)
 
-    def create_flat_background(self, index, save_after=None, **kwargs):
+    def create_flat_background(self, index, save_after=None, prefer=None, **kwargs):
         """
         Create an ordered background, save it, and instantiate it as a flat background
         :param index: index interface to use for the engine
@@ -47,9 +53,11 @@ class TarjanBackground(LcArchive):
         :return:
         """
         if self._flat is None:
+            if prefer is None:
+                prefer = self._prefer
             print('Creating flat background')
             start = time.time()
-            self._flat = FlatBackground.from_index(index, **kwargs)
+            self._flat = FlatBackground.from_index(index, prefer=prefer, **kwargs)
             self._add_name(index.origin, self.source, rewrite=True)
             print('Completed in %.3g sec' % (time.time() - start))
             if save_after or self._save_after:
