@@ -116,7 +116,7 @@ class BackgroundEngine(object):
         """
         """
         self.fg = index_interface
-        self.preferred_processes = dict()  # use to resolve termination errors. dict of flow_ref -> process
+        self.preferred_processes = {None: []}  # use to resolve termination errors. dict of flow_ref -> process
         self.missing_references = []
         self._quiet = quiet
         self._lowlinks = dict()  # dict mapping product_flow key to lowlink -- which is a key into TarjanStack.sccs
@@ -305,6 +305,9 @@ class BackgroundEngine(object):
             elif len(terms) == 1:
                 term = terms[0]
             else:
+                for pref in self.preferred_processes[None]:
+                    if pref in terms:
+                        return pref
                 if strategy == 'abort':
                     print('flow: %s\nAmbiguous termination found for %s: %s' % (exch.flow.external_ref,
                                                                                 exch.direction, exch.flow))
@@ -569,6 +572,16 @@ class BackgroundEngine(object):
         # self.make_foreground()
 
     def add_all_ref_products(self, multi_term='abort', default_allocation=None, prefer=None):
+        """
+
+        :param multi_term:
+        :param default_allocation:
+        :param prefer: Specify preferred providers.  Accepts the following formats:
+         dict: { flow_ref: process } or {flow_ref:process_ref}  .. process_ref as default provider for flow_ref
+         list: [(flow_ref, process_ref), ...] .. process_ref as default provider for flow_ref
+         list: [process_ref, ...] .. process_ref as default provider if ambiguous
+        :return:
+        """
         if self._all_added:
             return
         if prefer is not None:
@@ -577,11 +590,14 @@ class BackgroundEngine(object):
                     if hasattr(k, 'external_ref'):
                         k = k.external_ref
                     self.preferred_processes[k] = v
-            elif isinstance(prefer, tuple):
-                for k, v in prefer:
-                    if hasattr(k, 'external_ref'):
-                        k = k.external_ref
-                    self.preferred_processes[k] = v
+            elif isinstance(prefer, list):
+                try:
+                    for k, v in prefer:
+                        if hasattr(k, 'external_ref'):
+                            k = k.external_ref
+                        self.preferred_processes[k] = v
+                except TypeError:
+                    self.preferred_processes[None] = prefer
             else:
                 raise TypeError('Unable to interpret preferred process specification %s' % prefer)
         for p in self.fg.processes():
