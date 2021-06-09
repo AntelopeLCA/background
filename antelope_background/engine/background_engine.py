@@ -576,10 +576,16 @@ class BackgroundEngine(object):
 
         :param multi_term:
         :param default_allocation:
-        :param prefer: Specify preferred providers.  Accepts the following formats:
-         dict: { flow_ref: process } or {flow_ref:process_ref}  .. process_ref as default provider for flow_ref
-         list: [(flow_ref, process_ref), ...] .. process_ref as default provider for flow_ref
-         list: [process_ref, ...] .. process_ref as default provider if ambiguous
+        :param prefer: Specify preferred providers.  Because I am so sloppy, this routine has been written to accept
+        all kinds of possible formats for input:
+         dict: { flow_ref: process* } un-terminated flow-ref prefers named process
+           *- could be entity_type=process or external_ref of a process
+         list: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
+           * same
+           ** for both of these, either flows or external_refs of flows can be passed as keys
+         list: [process, ...] .. list of processes to prefer if an ambiguous match is encountered (legacy)
+           * external_refs are converted into processes
+        The list-of-2-tuples is tested in UsLciEcospoldTest; the legacy list-of-processes is tested in UsLciOlcaTest
         :return:
         """
         if self._all_added:
@@ -597,7 +603,10 @@ class BackgroundEngine(object):
                             k = k.external_ref
                         self.preferred_processes[k] = v
                 except TypeError:
-                    self.preferred_processes[None] = prefer
+                    for p in prefer:
+                        if not hasattr(p, 'entity_type'):
+                            p = self.fg.get(p)
+                        self.preferred_processes[None].append(p)
             else:
                 raise TypeError('Unable to interpret preferred process specification %s' % prefer)
         for p in self.fg.processes():
