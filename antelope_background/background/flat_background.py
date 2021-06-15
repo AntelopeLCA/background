@@ -208,6 +208,16 @@ class FlatBackground(object):
             gets undone in generate_em_defs which indicates we should use a method of TermRef to produce the ExchDef
             middleman
 
+            Note also the directionality here: comp_dir(em.direction)  em is coming from the BackgroundEngine so it
+            is an Emission type, which is created from an exterior exchange using its native flow and direction [w/r/t
+            the parent].  We take direction w.r.t. the context so the declaration is self-consistent, but that is not
+            really sensible. But it's serialized. Thus we take comp-dir.
+
+            Not investigated: whether problems arise when an exchange with a non-complementary context is used
+            as the source for a BackgroundEngine emission, the BackgroundEngine is flattened, serialized to .mat, and
+            deserialized for computation.  Not sure what the problem would be, but we should probably test it.
+            [LciaResult negates value when it detects a conflicting exchange-context pairing.]
+
             :param em:
             :return:
             """
@@ -449,7 +459,7 @@ class FlatBackground(object):
             if CONTEXT_STATUS_ == 'compat':
                 _term = None
             else:
-                _term = tuple(term.term_ref.split('; '))  # here we undo the ';'-join
+                _term = tuple(term.term_ref.split('; '))  # here we undo the '; '-join
             yield ExchDef(node_ref, term.flow_ref, dirn, _term, dat)
 
     def consumers(self, process, ref_flow):
@@ -462,6 +472,29 @@ class FlatBackground(object):
         else:
             for i in self._af[idx, :].nonzero()[1]:
                 yield self.fg[i]
+
+    def emitters(self, flow_ref, direction, context):
+        if context is None:
+            term = None
+        else:
+            term = '; '.join(context)
+        yielded = set()
+        for idx, ex in enumerate(self.ex):  # termination, flow_ref, direction
+            if ex.flow_ref != flow_ref:
+                continue
+            if direction:
+                if ex.direction != direction:
+                    continue
+            if term:
+                if ex.term_ref != term:
+                    continue
+            # found an eligible external flow
+            for i in self._bf[idx, :].nonzero()[1]:
+                yielded.add(self.fg[i])
+            for i in self._B[idx, :].nonzero()[1]:
+                yielded.add(self.bg[i])
+        for rx in yielded:
+            yield rx
 
     def dependencies(self, process, ref_flow):
         if self.is_in_background(process, ref_flow):

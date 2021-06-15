@@ -1,5 +1,5 @@
 from antelope_core.implementations import BackgroundImplementation, CoreConfigureImplementation
-from antelope import ExteriorFlow
+from antelope import ExteriorFlow, check_direction, comp_dir
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
 
@@ -142,7 +142,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         for ex in self._flat.ex:
             c = ex.term_ref
             f = self[ex.flow_ref]
-            yield ExteriorFlow(self.origin, f, ex.direction, c)
+            yield ExteriorFlow(self.origin, f, comp_dir(ex.direction), c)  # serialization is opposite sense from API spec
 
     def is_in_scc(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
@@ -181,6 +181,15 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     def consumers(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
         for x in self._flat.consumers(process, ref_flow):
+            yield self._exchange_from_term_ref(x)
+
+    def emitters(self, flow, direction=None, context=None, **kwargs):
+        self.check_bg()
+        if context is not None:
+            context = self._index.get_context(context)
+        if direction is not None:
+            direction = check_direction(direction)
+        for x in self._flat.emitters(flow, direction, context):
             yield self._exchange_from_term_ref(x)
 
     def product_models(self, **kwargs):
