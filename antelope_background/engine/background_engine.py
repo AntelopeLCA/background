@@ -675,9 +675,9 @@ class BackgroundEngine(object):
             rx = parent.process.reference()
             print('    using ref %s\n' % rx)
 
-        exchs = parent.process.inventory(ref_flow=rx)
+        exchs = parent.process.inventory(ref_flow=rx)  # allocated exchanges
 
-        for exch in exchs:  # unallocated exchanges
+        for exch in exchs:
             if exch.is_reference:  # in parent.process.reference_entity:
                 # we're done with the exchange
                 raise TypeError('Reference exchange encountered in bg inventory %s' % exch)
