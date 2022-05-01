@@ -8,6 +8,12 @@ requires = [
 
 """
 Change Log
+0.1.8 - 2022-04-08 - version bump release to match core 0.1.8
+ - Normalize how contexts are serialized and deserialized
+ - add 'emitters' API route
+ - preferred provider catch-all config
+ - rename bg ordering file suffix to '.ordering.json.gz' and expose as a constant
+
 0.1.6 - 2021-03-09 - compartment manager rework -> pass contexts as tuples
 0.1.5 - 2021-02-05 - bump version to keep pace with antelope_core 
 0.1.4 - 2021-01-29 - bugfixes to get CI passing.  match consistent versions with other packages.
@@ -16,7 +22,7 @@ Change Log
 """
 
 
-VERSION = '0.1.6'
+VERSION = '0.1.8'
 
 setup(
     name="antelope_background",
