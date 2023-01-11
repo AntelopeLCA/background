@@ -2,8 +2,7 @@
 class for storing static results of a tarjan ordering
 """
 
-from scipy.sparse.csc import csc_matrix
-from scipy.sparse.csr import csr_matrix
+from scipy.sparse import csc_matrix, csr_matrix
 from scipy.sparse.linalg import inv, factorized, spsolve
 from scipy.sparse import eye
 from scipy.io import savemat, loadmat
