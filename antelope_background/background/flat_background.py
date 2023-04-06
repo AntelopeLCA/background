@@ -590,8 +590,11 @@ class FlatBackground(object):
         TermRef
         :return:
         """
+        node_ref = None
         data = defaultdict(list)
         for x in demand:
+            if node_ref is None:  # just take the first one
+                node_ref = x.process.external_ref
             if isinstance(x.termination, Context):
                 key = ('; '.join(x.termination.as_list()), x.flow.external_ref, comp_dir(x.direction))
                 try:
@@ -632,11 +635,11 @@ class FlatBackground(object):
         for i in range(len(data['ex_ind'])):
             bx[data['ex_ind'][i]] += data['ex_val'][i]
 
-        for x in self._generate_em_defs(None, csr_matrix(bx)):
+        for x in self._generate_em_defs(node_ref, csr_matrix(bx)):
             yield x
 
         for x in data['missed']:
-            yield ExchDef(None, x.flow, x.direction, x.termination, x.value)
+            yield ExchDef(x.process, x.flow, x.direction, x.termination, x.value)
 
     def _write_ordering(self, filename):
         if not filename.endswith(ORDERING_SUFFIX):

@@ -92,7 +92,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         _check_ref(process, <anything>) -> obtain process.reference(<anything>) and fall back to above
         :param arg:
         :param opt_arg:
-        :return:
+        :return: two strings which are valid external refs: process_ref, flow_ref
         """
         self.check_bg()
         try:
@@ -176,6 +176,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
                 term = self._index.get_context(x.term)
             else:
                 term = x.term
+            if node is None:
+                node = self[x.process]
             yield ExchangeValue(node, self[x.flow], x.direction, termination=term, value=x.value)
 
     def consumers(self, process, ref_flow=None, **kwargs):
@@ -242,9 +244,9 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         for x in self._direct_exchanges(node, self._flat.lci(process, ref_flow, **kwargs), context=True):
             yield x
 
-    def sys_lci(self, node, demand, **kwargs):
+    def sys_lci(self, demand, **kwargs):
         self.check_bg()
-        for x in self._direct_exchanges(node, self._flat.sys_lci(demand), context=True):
+        for x in self._direct_exchanges(None, self._flat.sys_lci(demand), context=True):
             yield x
 
 

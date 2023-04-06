@@ -1,13 +1,16 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.1.6",
+    "antelope_core>=0.2.0",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.0 - 2023-04-06 - Redefine sys_lci to omit spurious node argument. sync with virtualize branches upstream.
+                     TODO: get rid of tail recursion in background Tarjan engine
+
 0.1.8 - 2022-04-08 - version bump release to match core 0.1.8
  - Normalize how contexts are serialized and deserialized
  - add 'emitters' API route
@@ -22,7 +25,7 @@ Change Log
 """
 
 
-VERSION = '0.1.8'
+VERSION = '0.2.0'
 
 setup(
     name="antelope_background",
