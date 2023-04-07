@@ -8,7 +8,7 @@ from scipy.sparse import eye
 from scipy.io import savemat, loadmat
 
 import os
-from collections import namedtuple, defaultdict
+from collections import namedtuple
 
 from antelope import CONTEXT_STATUS_, comp_dir  # , num_dir
 from ..engine import BackgroundEngine
@@ -73,6 +73,14 @@ class TermRef(object):
         return iter(self.__array__())
 
 
+"""
+An ExchDef is a serialized exchange definition. It should contain:
+.process = a string node ref
+.flow = a string flow ref
+.direction = a valid direction
+.term = EITHER a string term_ref (interior flow) OR a tuple of strings (context) OR None (cutoff)
+.value = float
+"""
 ExchDef = namedtuple('ExchDef', ('process', 'flow', 'direction', 'term', 'value'))
 
 
@@ -166,7 +174,9 @@ def flatten(af, ad, bf, ts):
 
     return non * scc_inv, ad * scc_inv, bf * scc_inv
 
+
 ORDERING_SUFFIX = '.ordering.json.gz'
+
 
 class FlatBackground(object):
     """
@@ -588,58 +598,66 @@ class FlatBackground(object):
 
         :param demand: an iterable of exchanges, each of which must be mapped to a foreground, interior, or exterior
         TermRef
+        :param quiet: whether to silence debugging info
         :return:
         """
         node_ref = None
-        data = defaultdict(list)
+
+        fg_ind = []
+        fg_val = []
+        bg_ind = []
+        bg_val = []
+        ex_ind = []
+        ex_val = []
+
+        missed = []
+
         for x in demand:
             if node_ref is None:  # just take the first one
                 node_ref = x.process.external_ref
             if isinstance(x.termination, Context):
-                key = ('; '.join(x.termination.as_list()), x.flow.external_ref, comp_dir(x.direction))
-                try:
-                    ind = self._ex_index[key]
-                    data['ex_ind'].append(ind)
-                    data['ex_val'].append(x.value * self._check_dirn(self._ex[ind], x))
-                except KeyError:
-                    data['missed'].append(x)
+                missed.append(ExchDef(x.process.external_ref, x.flow.external_ref, x.direction,
+                                      tuple(x.termination.as_list()), x.value))
             elif x.termination is None:
-                data['missed'].append(x)
+                missed.append(ExchDef(x.process.external_ref, x.flow.external_ref, x.direction, None, x.value))
             else:
                 key = (x.termination, x.flow.external_ref)
                 if key in self._fg_index:
                     ind = self._fg_index[key]
-                    data['fg_ind'].append(ind)
-                    data['fg_val'].append(x.value * self._check_dirn(self._fg[ind], x))
+                    fg_ind.append(ind)
+                    fg_val.append(x.value * self._check_dirn(self._fg[ind], x))
                 elif key in self._bg_index:
                     ind = self._bg_index[key]
-                    data['bg_ind'].append(ind)
-                    data['bg_val'].append(x.value * self._check_dirn(self._bg[ind], x))
+                    bg_ind.append(ind)
+                    bg_val.append(x.value * self._check_dirn(self._bg[ind], x))
                 else:
-                    data['missed'].append(x)
+                    xd = ExchDef(x.process.external_ref, key[1], x.direction, key[0], x.value)
+                    if not quiet:
+                        print('missed %s-%s-%s-%s-%s' % xd)
+                    missed.append(xd)
 
         # compute ad_tilde  # csr_matrix(((1,), ((inx,), (0,))), shape=(dim, 1))
-        x_dmd = csr_matrix((data['fg_val'], (data['fg_ind'], [0]*len(data['fg_ind']))), shape=(self.pdim, 1))
+        x_dmd = csr_matrix((fg_val, (fg_ind, [0]*len(fg_ind))), shape=(self.pdim, 1))
         x_tilde = _iterate_a_matrix(self._af, x_dmd, quiet=True, **kwargs)
         ad_tilde = self._ad.dot(x_tilde).todense()
         bf_tilde = self._bf.dot(x_tilde).todense()
 
         # consolidate bg dependencies
-        for i in range(len(data['bg_ind'])):
-            ad_tilde[data['bg_ind'][i]] += data['bg_val'][i]
+        for i in range(len(bg_ind)):
+            ad_tilde[bg_ind[i]] += bg_val[i]
 
         # compute b
         bx = self._compute_bg_lci(ad_tilde, quiet=quiet, **kwargs) + bf_tilde
 
         # consolidate direct emissions
-        for i in range(len(data['ex_ind'])):
-            bx[data['ex_ind'][i]] += data['ex_val'][i]
+        for i in range(len(ex_ind)):
+            bx[ex_ind[i]] += ex_val[i]
 
         for x in self._generate_em_defs(node_ref, csr_matrix(bx)):
             yield x
 
-        for x in data['missed']:
-            yield ExchDef(x.process, x.flow, x.direction, x.termination, x.value)
+        for x in missed:  #
+            yield x
 
     def _write_ordering(self, filename):
         if not filename.endswith(ORDERING_SUFFIX):
