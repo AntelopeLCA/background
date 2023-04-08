@@ -11,6 +11,7 @@ import os
 from collections import namedtuple
 
 from antelope import CONTEXT_STATUS_, comp_dir  # , num_dir
+from antelope.models import UnallocatedExchange, Exchange
 from ..engine import BackgroundEngine
 from antelope_core import from_json, to_json
 from antelope_core.contexts import Context
@@ -597,7 +598,8 @@ class FlatBackground(object):
         """
 
         :param demand: an iterable of exchanges, each of which must be mapped to a foreground, interior, or exterior
-        TermRef
+        TermRef. The exchanges can either be proper exchanges, or ExchangeRefs, or UnallocatedExchange or
+        AllocatedExchange models
         :param quiet: whether to silence debugging info
         :return:
         """
@@ -612,14 +614,20 @@ class FlatBackground(object):
 
         missed = []
 
-        for x in demand:
+        for exch in demand:
+
+            if isinstance(exch, Exchange):
+                x = exch
+            else:
+                x = UnallocatedExchange.from_inv(exch)
+
             if node_ref is None:  # just take the first one
-                node_ref = x.process.external_ref
-            if isinstance(x.termination, Context):
-                missed.append(ExchDef(x.process.external_ref, x.flow.external_ref, x.direction,
-                                      tuple(x.termination.as_list()), x.value))
+                node_ref = x.process
+            if x.type == 'context':
+                missed.append(ExchDef(x.process, x.flow.external_ref, x.direction,
+                                      tuple(x.context), x.value))
             elif x.termination is None:
-                missed.append(ExchDef(x.process.external_ref, x.flow.external_ref, x.direction, None, x.value))
+                missed.append(ExchDef(x.process, x.flow.external_ref, x.direction, None, x.value))
             else:
                 key = (x.termination, x.flow.external_ref)
                 if key in self._fg_index:
@@ -631,7 +639,7 @@ class FlatBackground(object):
                     bg_ind.append(ind)
                     bg_val.append(x.value * self._check_dirn(self._bg[ind], x))
                 else:
-                    xd = ExchDef(x.process.external_ref, key[1], x.direction, key[0], x.value)
+                    xd = ExchDef(x.process, key[1], x.direction, key[0], x.value)
                     if not quiet:
                         print('missed %s-%s-%s-%s-%s' % xd)
                     missed.append(xd)
