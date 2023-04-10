@@ -1,13 +1,16 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.2.0",
+    "antelope_core>=0.2.1",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.1 - 2023-04-10 - xdb passes benchmarks.
+                     sys_lci running both locally and remotely.
+
 0.2.0 - 2023-04-06 - Redefine sys_lci to omit spurious node argument. sync with virtualize branches upstream.
                      TODO: get rid of tail recursion in background Tarjan engine
 
@@ -25,7 +28,7 @@ Change Log
 """
 
 
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 
 setup(
     name="antelope_background",
