@@ -14,7 +14,6 @@ from antelope import CONTEXT_STATUS_, comp_dir  # , num_dir
 from antelope.models import UnallocatedExchange, Exchange
 from ..engine import BackgroundEngine
 from antelope_core import from_json, to_json
-from antelope_core.contexts import Context
 
 
 SUPPORTED_FILETYPES = ('.mat', )
@@ -215,8 +214,7 @@ class FlatBackground(object):
             """
             Here we decide to store contexts as '; '-concatenated strings -- which we must do bc it is serializable
 
-            gets undone in generate_em_defs which indicates we should use a method of TermRef to produce the ExchDef
-            middleman
+            gets undone in map_context when we figure out which term_ref corresponds to which [canonical] context
 
             Note also the directionality here: comp_dir(em.direction)  em is coming from the BackgroundEngine so it
             is an Emission type, which is created from an exterior exchange using its native flow and direction [w/r/t
@@ -239,7 +237,7 @@ class FlatBackground(object):
             return em.flow.external_ref, comp_dir(em.direction), comp, 0
             >>>>>>> preferred_product
             '''
-            return em.flow.external_ref, comp_dir(em.direction), '; '.join(em.context.as_list()), 0
+            return em.flow.external_ref, comp_dir(em.direction), '; '.join(em.context.as_list()), 0  # serialize
 
         return cls([_make_term_ref(x) for x in be.foreground_flows(outputs=False)],
                    [_make_term_ref(x) for x in be.background_flows()],
@@ -293,6 +291,15 @@ class FlatBackground(object):
                    d['Af'].tocsr(), d['Ad'].tocsr(), d['Bf'].tocsr(),
                    lci_db=lci_db,
                    quiet=quiet)
+
+    context_map = None
+
+    def map_contexts(self, index):
+        self.context_map = dict()
+        for k in self._ex:
+            if k.term_ref not in self.context_map:
+                term = tuple(k.term_ref.split('; '))  # de-serialize
+                self.context_map[k.term_ref] = index.get_context(term)
 
     def __init__(self, foreground, background, exterior, af, ad, bf, lci_db=None, quiet=True):
         """
@@ -469,7 +476,7 @@ class FlatBackground(object):
             if CONTEXT_STATUS_ == 'compat':
                 _term = None
             else:
-                _term = tuple(term.term_ref.split('; '))  # here we undo the '; '-join
+                _term = self.context_map.get(term.term_ref)
             yield ExchDef(node_ref, term.flow_ref, dirn, _term, dat)
 
     def consumers(self, process, ref_flow):
@@ -484,10 +491,14 @@ class FlatBackground(object):
                 yield self.fg[i]
 
     def emitters(self, flow_ref, direction, context):
-        if context is None:
-            term = None
-        else:
-            term = '; '.join(context)
+        """
+        We have to test whether our serialized context matches the canonical one that was submitted. we also want to
+        internalize context serialization (search term: '; ')
+        :param flow_ref:
+        :param direction:
+        :param context: (canonical, "of query")
+        :return:
+        """
         yielded = set()
         for idx, ex in enumerate(self.ex):  # termination, flow_ref, direction
             if ex.flow_ref != flow_ref:
@@ -495,8 +506,8 @@ class FlatBackground(object):
             if direction:
                 if ex.direction != direction:
                     continue
-            if term:
-                if ex.term_ref != term:
+            if context:
+                if self.context_map.get(ex.term_ref) != context:
                     continue
             # found an eligible external flow
             for i in self._bf[idx, :].nonzero()[1]:
@@ -616,7 +627,7 @@ class FlatBackground(object):
 
         for exch in demand:
 
-            if isinstance(exch, Exchange):
+            if isinstance(exch, Exchange):  # the model
                 x = exch
             else:
                 x = UnallocatedExchange.from_inv(exch)

@@ -25,9 +25,12 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
 
     So ultimately this is a query object that implements the background interface.
 
-    The __init__ comes from the BasicImplementation, which requires an _archive as first argument.  In the default
-    BackgroundImplementation, this _archive is used to generally provide all the entity data.  However, in the Tarjan
-    background the FlatBackground provides all necessary information-- which boils down to external_refs that can be
+    The __init__ comes from the BasicImplementation, which requires an archive as first argument.  In the default
+    BackgroundImplementation, this archive is used to generally provide all the entity data.  However, in the Tarjan
+    background this is just a container for the FlatBackground lci calculator.  For that engine to work, it needs the
+    catalog query that is provided in setup_bm().  This is baked in at BackgroundInterface
+
+    the FlatBackground provides all necessary information-- which boils down to external_refs that can be
     looked up via the catalog / client code.
 
     The BackgroundImplementation subclasses BasicImplementation and adds an _index attribute.  This index is used for
@@ -38,10 +41,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     with a separate index file as json.
 
     The necessary conditions to RESTORE a flat Tarjan Background are the serialization created above, and an index
-    implementation for retrieving resources and contexts.
-
-    Thus the two routes
-
+    implementation for retrieving entities and contexts.
     """
 
     @classmethod
@@ -61,7 +61,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     basic implementation overrides
     """
     def __getitem__(self, item):
-        return self._index.get(item)
+        return self._fetch(item)
 
     def _fetch(self, external_ref, **kwargs):
         return self._index.get(external_ref, **kwargs)
@@ -83,6 +83,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             else:
                 raise AssertionError  # how would we ever get here?
                 # self._flat = FlatBackground.from_index(self._index, **kwargs)
+            self._flat.map_contexts(self._index)
         return True
 
     def _check_ref(self, arg, opt_arg):
@@ -163,22 +164,17 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             # to filter cutoffs vs emissions, first need to detect if x is an exterior exchange-- which we don't know how to do just yet
             yield ExchangeValue(self[x.process], self[x.flow], x.direction, termination=x.term, value=x.value)
 
-    def _direct_exchanges(self, node, x_iter, context=False):
+    def _direct_exchanges(self, node, x_iter):
         """
         This expects an iterable of ExchDefs, which are clearly redundant (only used for this)
         :param node:
         :param x_iter:
-        :param context:
         :return:
         """
         for x in x_iter:
-            if context is True:
-                term = self._index.get_context(x.term)
-            else:
-                term = x.term
             if node is None:
                 node = self[x.process]
-            yield ExchangeValue(node, self[x.flow], x.direction, termination=term, value=x.value)
+            yield ExchangeValue(node, self[x.flow], x.direction, termination=x.term, value=x.value)
 
     def consumers(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
@@ -186,9 +182,14 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             yield self._exchange_from_term_ref(x)
 
     def emitters(self, flow, direction=None, context=None, **kwargs):
+        """
+        :param flow:
+        :param direction: [None]
+        :param context: should be canonical, if provided
+        :param kwargs:
+        :return:
+        """
         self.check_bg()
-        if context is not None:
-            context = self._index.get_context(context)
         if direction is not None:
             direction = check_direction(direction)
         for x in self._flat.emitters(flow, direction, context):
@@ -223,7 +224,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     def _exterior(self, process, ref_flow=None):
         process, ref_flow = self._check_ref(process, ref_flow)
         node = self[process]
-        for x in self._direct_exchanges(node, self._flat.exterior(process, ref_flow), context=True):
+        for x in self._direct_exchanges(node, self._flat.exterior(process, ref_flow)):
             yield x
 
     def ad(self, process, ref_flow=None, **kwargs):
@@ -235,18 +236,18 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     def bf(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
         node = self[process]
-        for x in self._direct_exchanges(node, self._flat.bf(process, ref_flow), context=True):
+        for x in self._direct_exchanges(node, self._flat.bf(process, ref_flow)):
             yield x
 
     def lci(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
         node = self[process]
-        for x in self._direct_exchanges(node, self._flat.lci(process, ref_flow, **kwargs), context=True):
+        for x in self._direct_exchanges(node, self._flat.lci(process, ref_flow, **kwargs)):
             yield x
 
     def sys_lci(self, demand, **kwargs):
         self.check_bg()
-        for x in self._direct_exchanges(None, self._flat.sys_lci(demand), context=True):
+        for x in self._direct_exchanges(None, self._flat.sys_lci(demand)):
             yield x
 
 
