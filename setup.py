@@ -8,7 +8,7 @@ requires = [
 
 """
 Change Log
-0.2.2 - 2024-03-12 - termination test; refactored Tarjan algorithm to remove recursion
+0.2.2 - 2024-03-12 - termination test; changed some exceptions
 
 0.2.1 - 2023-04-10 - xdb passes benchmarks.
                      sys_lci running both locally and remotely.
