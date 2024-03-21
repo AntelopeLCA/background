@@ -1,13 +1,15 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.2.1",
+    "antelope_core>=0.2.3",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.3 - 2024-03-21 - Correct dependencies
+
 0.2.2 - 2024-03-12 - termination test; changed some exceptions
 
 0.2.1 - 2023-04-10 - xdb passes benchmarks.
@@ -30,7 +32,7 @@ Change Log
 """
 
 
-VERSION = '0.2.2'
+VERSION = '0.2.3'
 
 setup(
     name="antelope_background",
