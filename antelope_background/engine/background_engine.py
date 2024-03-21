@@ -707,8 +707,9 @@ class BackgroundEngine(object):
                 # not visited -- need to visit
                 i = self._create_product_flow(exch.flow, term)
                 if i is None:
-                    print('Cutting off at Parent process: %s\n%s %s\n' % (parent.process.external_ref, exch.flow.link,
-                                                                          term))
+                    print('Cutting off at Parent process: %s\n%s -X- %s\n' % (parent.process.external_ref,
+                                                                              exch.flow.name,
+                                                                              term))
                     continue
                 if i.debug:
                     print('Parent: %s' % parent.process)

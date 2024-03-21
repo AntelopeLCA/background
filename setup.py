@@ -8,6 +8,8 @@ requires = [
 
 """
 Change Log
+0.2.2 - 2024-03-12 - termination test; refactored Tarjan algorithm to remove recursion
+
 0.2.1 - 2023-04-10 - xdb passes benchmarks.
                      sys_lci running both locally and remotely.
 
@@ -28,7 +30,7 @@ Change Log
 """
 
 
-VERSION = '0.2.1'
+VERSION = '0.2.2'
 
 setup(
     name="antelope_background",

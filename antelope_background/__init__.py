@@ -1,8 +1,8 @@
-from .providers import TarjanBackground
+from .providers import TarjanBackground, termination_test
 from .background import TarjanBackgroundImplementation
 import os
 
-__all__ = ['init_fcn', 'tarjan_background']
+__all__ = ['init_fcn', 'tarjan_background', 'TarjanBackground', 'termination_test']
 
 
 def init_fcn(source, ref=None, **kwargs):

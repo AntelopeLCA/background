@@ -4,13 +4,21 @@ LcArchive subclass that supports rich background computations by providing a Fla
 
 import os
 import time
+from abc import ABC
 
 from antelope_core.archives import LcArchive, InterfaceError
 from ..background.flat_background import FlatBackground, SUPPORTED_FILETYPES, ORDERING_SUFFIX
 from ..background.implementation import TarjanBackgroundImplementation, TarjanConfigureImplementation
+from .check_terms import termination_test
 
 
-class TarjanBackground(LcArchive):
+def _ref(obj):
+    if hasattr(obj, 'external_ref'):
+        return obj.external_ref
+    return str(obj)
+
+
+class TarjanBackground(LcArchive, ABC):
 
     def __init__(self, source, save_after=False, **kwargs):
         self._save_after = save_after
@@ -36,6 +44,9 @@ class TarjanBackground(LcArchive):
 
     def prefer(self, flow, process):
         self._prefer[flow] = process
+
+    def test_archive(self, query, strict=True):
+        return termination_test(query, self._prefer, strict=strict)
 
     def make_interface(self, iface, privacy=None):
         if iface == 'background':
