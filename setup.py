@@ -1,13 +1,15 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.2.3",
+    "antelope_core>=0.2.4",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.4 - 2024-04-17 - Remove antelope.ExteriorFlow in favor of antelope.models.ExteriorFlow
+
 0.2.3 - 2024-03-21 - Correct dependencies
 
 0.2.2 - 2024-03-12 - termination test; changed some exceptions
@@ -32,7 +34,7 @@ Change Log
 """
 
 
-VERSION = '0.2.3'
+VERSION = '0.2.4'
 
 setup(
     name="antelope_background",
