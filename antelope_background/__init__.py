@@ -35,7 +35,7 @@ def tarjan_background(res, source=None, **kwargs):
      exists, will save after construction)
     :return:
     """
-    if os.path.exists(source):
+    if source and os.path.exists(source):
         return TarjanBackgroundImplementation.from_file(res, source, **kwargs)
     else:
         tb = TarjanBackground(source, save_after=True, **kwargs)

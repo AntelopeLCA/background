@@ -22,13 +22,16 @@ class TarjanBackground(LcArchive, ABC):
 
     def __init__(self, source, save_after=False, **kwargs):
         self._save_after = save_after
-        self._prefer = dict()
-        if source.endswith(ORDERING_SUFFIX):
-            source = source[:-len(ORDERING_SUFFIX)]  # prevent us from trying to instantiate from the ordering file
+        self._prefer = {None: []}
+        if source:
+            if source.endswith(ORDERING_SUFFIX):
+                source = source[:-len(ORDERING_SUFFIX)]  # prevent us from trying to instantiate from the ordering file
 
-        filetype = os.path.splitext(source)[1]
-        if filetype not in SUPPORTED_FILETYPES:
-            raise ValueError('Unsupported filetype %s' % filetype)
+            filetype = os.path.splitext(source)[1]
+            if filetype not in SUPPORTED_FILETYPES:
+                raise ValueError('Unsupported filetype %s' % filetype)
+        else:
+            self._save_after = False
 
         '''
         if not source.endswith(self._filetype):
@@ -37,13 +40,24 @@ class TarjanBackground(LcArchive, ABC):
 
         super(TarjanBackground, self).__init__(source, **kwargs)
 
-        if os.path.exists(source):  # flat background already stored
+        if source and os.path.exists(source):  # flat background already stored
             self._flat = FlatBackground.from_file(source)
         else:
             self._flat = None
 
     def prefer(self, flow, process):
-        self._prefer[flow] = process
+        """
+        Supply a reference flow (or external ref) and the preferred provider process (or external ref)
+        If a process is to be preferred for *all* its flows, specify 'None' as the flow.
+
+        :param flow: a reference flow (or external ref) or None
+        :param process: a preferred process (or external ref)
+        :return:
+        """
+        if flow is None:
+            self._prefer[None].append(_ref(process))
+        else:
+            self._prefer[_ref(flow)] = _ref(process)
 
     def test_archive(self, query, strict=True):
         return termination_test(query, self._prefer, strict=strict)
@@ -61,14 +75,49 @@ class TarjanBackground(LcArchive, ABC):
         Create an ordered background, save it, and instantiate it as a flat background
         :param index: index interface to use for the engine
         :param save_after: trigger save-after (note: does not override init value)
+        :param prefer: specify preferred providers.  Because I am so sloppy, this routine has been written to accept
+         all kinds of possible formats for input:
+         dict: { flow_ref: process* } un-terminated flow-ref prefers named process
+           *- could be entity_type=process or external_ref of a process
+         iterable of 2-tuples: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
+           *- for both of these, either flows or external_refs of flows can be passed as keys
+           *- to prefer a process regardless of reference flow, use None as the flow_ref
+         iterable of entries:
+                 Because I am so sloppy, this routine has been written to accept all kinds of possible formats for input:
+         dict: { flow_ref: process* } un-terminated flow-ref prefers named process
+           *- could be entity_type=process or external_ref of a process
+         iterable of 2-tuples: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
+           *- for both of these, either flows or external_refs of flows can be passed as keys
+           *- to prefer a process regardless of reference flow, use None as the flow_ref
+         list of processes: [process, ...] .. list of processes to prefer if an ambiguous match is encountered (legacy)
+           * equivalent to a list of [(None, process), ...]
+
         :return:
         """
         if self._flat is None:
-            if prefer is None:
-                prefer = self._prefer
+            prefer_dict = {k: v for k, v in self._prefer.items()}
+            if prefer is not None:
+                if isinstance(prefer, dict):
+                    for k, v in prefer.items():
+                        if k is None:
+                            prefer_dict[None].extend(_ref(z) for z in v)
+                        else:
+                            prefer_dict[_ref(k)] = _ref(v)
+                elif hasattr(prefer, '__iter__'):
+                    try:
+                        for k, v in prefer:
+                            if k is None:
+                                prefer_dict[None].extend(_ref(z) for z in v)
+                            else:
+                                prefer_dict[_ref(k)] = _ref(v)
+                    except TypeError:
+                        prefer_dict[None].extend(_ref(z) for z in prefer)
+                else:
+                    raise TypeError('Unable to parse preferred-provider specification')
+
             print('Creating flat background')
             start = time.time()
-            self._flat = FlatBackground.from_index(index, prefer=prefer, **kwargs)
+            self._flat = FlatBackground.from_index(index, preferred=prefer_dict, **kwargs)
             self._add_name(index.origin, self.source, rewrite=True)
             print('Completed in %.3g sec' % (time.time() - start))
             if save_after or self._save_after:

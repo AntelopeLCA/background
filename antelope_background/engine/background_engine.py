@@ -1,12 +1,9 @@
 """
 Tarjan's strongly connected components algorithm is recursive.  Python doesn't do well with deep recursion, so
-ultimately this code will need to be implemented on a more grown-up language.  For now, however, the recursion
-limit test that ships with python reported a segfault at a recursion limit exceeding 19100 -- bigger than ecoinvent!
-So for the time being we are safe.
-may need to use threading to go higher (see http://stackoverflow.com/questions/2917210/)
-Validate recursion depth on a given system using PYTHONROOT/Tools/scripts/find_recursionlimit.py
+we will re-implement the recursion as an iteration with a stack:
+https://www.refactoring.com/catalog/replaceRecursionWithIteration.html
+
 """
-import sys  # for recursion limit
 import re  # for product_flows search
 
 import numpy as np
@@ -18,9 +15,6 @@ from antelope_core.contexts import NullContext
 from .tarjan_stack import TarjanStack
 from .product_flow import ProductFlow, NoMatchingReference
 from .emission import Emission
-
-
-MAX_SAFE_RECURSION_LIMIT = 18000  # this should be validated using
 
 
 class RepeatAdjustment(Exception):
@@ -90,33 +84,34 @@ class NoAllocation(Exception):
     pass
 
 
-'''
-def is_elementary(flow):
-    """
-    in future, this sholud lookup to a standalone compartment manager
-    :param flow:
-    :return:
-    """
-    comp = flow['Compartment'][0]
-    if comp == 'air' or comp == 'water' or comp == 'soil' or comp == 'natural resource':
-        # Ecoinvent + USLCI
-        return True
-    elif comp == 'resource':
-        # USLCI
-        return True
-    return False
-'''
-
-
 class BackgroundEngine(object):
     """
     Class for converting a collection of linked processes into a coherent technology matrix.
     """
-    def __init__(self, index_interface, quiet=True):
+    def __init__(self, query, quiet=True, preferred=None):
         """
+        Construct an ordered background matrix from a query that implements basic, index and exchange.
+        Required routes:
+         query.get() <- for all processes and flows
+         query.count('process')
+         query.processes() <- complete
+         flow.targets()
+         process.references()
+         process.reference(ref_flow)
+         process.inventory(ref_flow)
+
+         process.__getitem__() <-- SpatialScope (only used in rare cases)
+
+        :param query:
+        :param quiet:
+        :param preferred: a dict mapping flow external refs to their preferred processes (by external ref).
+        The special entry None should map to a list of process external_refs that should be preferred whenever they
+        are found (in the order of preference)
         """
-        self.fg = index_interface
-        self.preferred_processes = {None: []}  # use to resolve termination errors. dict of flow_ref -> process
+        self.fg = query
+        self._preferred_processes = {None: []}  # use to resolve termination errors. dict of flow_ref -> process
+        if preferred:
+            self._preferred_processes.update(preferred)
         self.missing_references = []
         self._quiet = quiet
         self._lowlinks = dict()  # dict mapping product_flow key to lowlink -- which is a key into TarjanStack.sccs
@@ -143,9 +138,7 @@ class BackgroundEngine(object):
 
         self._all_added = False
 
-        self._rec_limit = self.fg.count('process')
-        if self.required_recursion_limit > MAX_SAFE_RECURSION_LIMIT:
-            raise EnvironmentError('This database may require too high a recursion limit-- time to learn lisp.')
+        self._r_stack = []  # recursion stack
 
         self._emissions = dict()  # maps emission key to index
         self._ef_index = []  # maps index to emission
@@ -165,10 +158,6 @@ class BackgroundEngine(object):
     @property
     def fully_allocated(self):
         return len(self._surplus_coproducts) == 0
-
-    @property
-    def required_recursion_limit(self):
-        return max(sys.getrecursionlimit(), self._rec_limit)
 
     @property
     def mdim(self):
@@ -289,8 +278,8 @@ class BackgroundEngine(object):
         else:
             if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
                 return None
-            if exch.flow.external_ref in self.preferred_processes:
-                term = self.preferred_processes[exch.flow.external_ref]
+            if exch.flow.external_ref in self._preferred_processes:
+                term = self._preferred_processes[exch.flow.external_ref]
                 if term is None:
                     return None
                 if not hasattr(term, 'entity_type'):
@@ -305,9 +294,11 @@ class BackgroundEngine(object):
             elif len(terms) == 1:
                 term = terms[0]
             else:
-                for pref in self.preferred_processes[None]:
-                    if pref in terms:
-                        return pref
+                t_map = {t.external_ref: t for t in terms}
+                pref = self._preferred_processes[None]
+                for p in pref:
+                    if p in t_map:
+                        return t_map[p]
                 if strategy == 'abort':
                     print('flow: %s\nAmbiguous termination found for %s: %s' % (exch.flow.external_ref,
                                                                                 exch.direction, exch.flow))
@@ -323,7 +314,7 @@ class BackgroundEngine(object):
                     # return self.fg.mix(exch.flow, exch.direction)
                 else:
                     raise KeyError('Unknown multi-termination strategy %s' % strategy)
-            return self.fg.get(term.external_ref)  # required to get full exchange list
+            return term  # targets() returns refs- no need to get again
 
     @staticmethod
     def construct_sparse(nums, nrows, ncols):
@@ -571,45 +562,17 @@ class BackgroundEngine(object):
 
         # self.make_foreground()
 
-    def add_all_ref_products(self, multi_term='abort', default_allocation=None, prefer=None):
+    def add_all_ref_products(self, multi_term='abort', default_allocation=None):
         """
 
         :param multi_term:
         :param default_allocation:
-        :param prefer: Specify preferred providers.  Because I am so sloppy, this routine has been written to accept
-        all kinds of possible formats for input:
-         dict: { flow_ref: process* } un-terminated flow-ref prefers named process
-           *- could be entity_type=process or external_ref of a process
-         list: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
-           * same
-           ** for both of these, either flows or external_refs of flows can be passed as keys
-         list: [process, ...] .. list of processes to prefer if an ambiguous match is encountered (legacy)
-           * external_refs are converted into processes
         The list-of-2-tuples is tested in UsLciEcospoldTest; the legacy list-of-processes is tested in UsLciOlcaTest
         :return:
         """
         if self._all_added:
             return
-        if prefer is not None:
-            if isinstance(prefer, dict):
-                for k, v in prefer.items():
-                    if hasattr(k, 'external_ref'):
-                        k = k.external_ref
-                    self.preferred_processes[k] = v
-            elif isinstance(prefer, list):
-                try:
-                    for k, v in prefer:
-                        if hasattr(k, 'external_ref'):
-                            k = k.external_ref
-                        self.preferred_processes[k] = v
-                except TypeError:
-                    for p in prefer:
-                        if not hasattr(p, 'entity_type'):
-                            p = self.fg.get(p)
-                        self.preferred_processes[None].append(p)
-            else:
-                raise TypeError('Unable to interpret preferred process specification %s' % prefer)
-        for p in self.fg.processes():
+        for p in self.fg.processes(count=self.fg.count('process')):
             for x in p.references():
                 j = self.check_product_flow(x.flow, p)
                 if j is None:
@@ -644,9 +607,6 @@ class BackgroundEngine(object):
         return j
 
     def _add_ref_product(self, flow, term, multi_term, default_allocation):
-        old_recursion_limit = sys.getrecursionlimit()
-        sys.setrecursionlimit(self.required_recursion_limit)
-
         j = self._create_product_flow(flow, term)
         try:
             self._traverse_term_exchanges(j, multi_term, default_allocation)
@@ -656,7 +616,6 @@ class BackgroundEngine(object):
 
             raise
 
-        sys.setrecursionlimit(old_recursion_limit)
         return j
 
     def _traverse_term_exchanges(self, parent, multi_term, default_allocation):
@@ -668,12 +627,14 @@ class BackgroundEngine(object):
         """
         rx = parent.process.reference(parent.flow)
 
+        ''' # this could never happen
         if not rx.is_reference:
             print('### Nonreference RX found!\nterm: %s\nflow: %s\next_id: %s' % (rx.process,
                                                                                   rx.flow,
                                                                                   rx.process.external_ref))
             rx = parent.process.reference()
             print('    using ref %s\n' % rx)
+        '''
 
         exchs = parent.process.inventory(ref_flow=rx)  # allocated exchanges
 
@@ -682,6 +643,11 @@ class BackgroundEngine(object):
                 # we're done with the exchange
                 raise TypeError('Reference exchange encountered in bg inventory %s' % exch)
             val = pval = exch.value  # allocated exchange
+
+            # for interior flows-- enforce normative direction
+            if exch.direction == 'Output':
+                pval *= -1
+
             if val is None or val == 0:
                 # don't add zero entries (or descendants) to sparse matrix
                 continue
@@ -690,9 +656,6 @@ class BackgroundEngine(object):
                 print('Skipping pass-thru exchange: %s' % exch)
                 continue
 
-            # interior flow-- enforce normative direction
-            if exch.direction == 'Output':
-                pval *= -1
             # normal non-reference exchange. Either a dependency (if interior) or a cutoff (if exterior).
             term = self.terminate(exch, multi_term)
             if term is None:
