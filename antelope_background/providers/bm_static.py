@@ -20,7 +20,7 @@ def _ref(obj):
 
 class TarjanBackground(LcArchive, ABC):
 
-    def __init__(self, source, save_after=False, **kwargs):
+    def __init__(self, source, save_after=False, engine=None, **kwargs):
         self._save_after = save_after
         self._prefer = {None: []}
         if source:
@@ -42,6 +42,8 @@ class TarjanBackground(LcArchive, ABC):
 
         if source and os.path.exists(source):  # flat background already stored
             self._flat = FlatBackground.from_file(source)
+        elif engine is not None:
+            self._flat = FlatBackground.from_background_engine(engine)
         else:
             self._flat = None
 
@@ -110,7 +112,7 @@ class TarjanBackground(LcArchive, ABC):
                                 prefer_dict[None].extend(_ref(z) for z in v)
                             else:
                                 prefer_dict[_ref(k)] = _ref(v)
-                    except TypeError:
+                    except ValueError:  # too many values to unpack
                         prefer_dict[None].extend(_ref(z) for z in prefer)
                 else:
                     raise TypeError('Unable to parse preferred-provider specification')
