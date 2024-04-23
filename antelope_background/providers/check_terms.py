@@ -20,7 +20,7 @@ def termination_test(query, prefer=None, strict=False):
 
     # first, validate preferred-providers
     for k, v in prefer.items():
-        if v is None:
+        if v is None or v == []:
             continue
         try:
             query.get(v).reference(k)
