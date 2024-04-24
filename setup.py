@@ -1,13 +1,16 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.2.4",
+    "antelope_core>=0.2.4.1",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.4.1 2024-04-24 - refactor recursion out of Tarjan algorithm; write LciTester
+                     depends on antelope_core 0.2.4.1 for search pagination
+
 0.2.4 - 2024-04-17 - Remove antelope.ExteriorFlow in favor of antelope.models.ExteriorFlow
 
 0.2.3 - 2024-03-21 - Correct dependencies
@@ -34,7 +37,7 @@ Change Log
 """
 
 
-VERSION = '0.2.4'
+VERSION = '0.2.4.1'
 
 setup(
     name="antelope_background",
