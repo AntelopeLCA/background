@@ -8,8 +8,9 @@ class TarjanStack(object):
     Stores the current stack and provides a record of named SCCs
     """
     def __init__(self):
-        self._stack = []
-        self._stack_hash = set()
+        self._stack = []  # product flows being reviewed
+        self._stack_hash = set()  # a (premature?) optimization to avoid costly list-membership testing
+
         self._sccs = defaultdict(set)  # dict mapping lowest index (lowlink = SCC ID) to the set of scc peers
         self._scc_of = dict()  # dict mapping product flow to SCC ID (reverse mapping of _sccs)
 

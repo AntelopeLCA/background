@@ -80,7 +80,7 @@ class LciTester(BackgroundInterface):
 
     @staticmethod
     def _exch_key(exch):
-        return exch.flow.external_ref, exch.direction, exch.termination
+        return exch.flow.external_ref, exch.direction, tuple(exch.termination)
 
     def _test_ref_exchanges(self, s1, s2):
         """

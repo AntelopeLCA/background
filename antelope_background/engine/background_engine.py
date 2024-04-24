@@ -6,15 +6,48 @@ https://www.refactoring.com/catalog/replaceRecursionWithIteration.html
 """
 import re  # for product_flows search
 
+from collections import deque
+
 import numpy as np
 from scipy.sparse import csr_matrix  # , csc_matrix,
 
 from antelope import comp_dir
+from antelope.refs import ProcessRef
 from antelope_core.contexts import NullContext
 
 from .tarjan_stack import TarjanStack
 from .product_flow import ProductFlow, NoMatchingReference
 from .emission import Emission
+
+
+class Marker:
+    """
+    Marker objects for interpreting the recursion queue
+    """
+    marker = None
+
+
+class ParentMarker(Marker):
+    """
+    Used to mark the beginning of a new parent
+    """
+    marker = 'parent'
+
+
+class RecurseMarker(Marker):
+    """
+    Used to mark the exchange that begins entry into recursion
+    """
+    marker = 'recurse'
+    def __init__(self, term):
+        self.term = term
+
+
+class DequeError(Exception):
+    """
+    Something has gone wrong
+    """
+    pass
 
 
 class RepeatAdjustment(Exception):
@@ -114,7 +147,7 @@ class BackgroundEngine(object):
             self._preferred_processes.update(preferred)
         self.missing_references = []
         self._quiet = quiet
-        self._lowlinks = dict()  # dict mapping product_flow key to lowlink -- which is a key into TarjanStack.sccs
+        self._lowlinks = dict()  # dict mapping product_flow key to lowlink (int) -- which is key into TarjanStack.sccs
 
         self.tstack = TarjanStack()  # ordering of sccs
 
@@ -128,8 +161,6 @@ class BackgroundEngine(object):
         self._bg_emission = []  # CutoffEntries whose parent is background - B*
         self._cutoff = []  # CutoffEntries whose parent is foreground - Bf
 
-        self._surplus_coproducts = dict()  # maps surplus coproducts to their reference products
-
         self._product_flows = dict()  # maps product_flow.key to index-- being position in _pf_index
         self._pf_index = []  # maps index to product_flow in order added
 
@@ -138,7 +169,8 @@ class BackgroundEngine(object):
 
         self._all_added = False
 
-        self._r_stack = []  # recursion stack
+        self._r_stack = deque()  # recursion stack
+        self._p_stack = list()  # recursion parents
 
         self._emissions = dict()  # maps emission key to index
         self._ef_index = []  # maps index to emission
@@ -150,14 +182,6 @@ class BackgroundEngine(object):
     @property
     def lci_db(self):
         return self._a_matrix, self._b_matrix
-
-    @property
-    def surplus_coproducts(self):
-        return self._surplus_coproducts
-
-    @property
-    def fully_allocated(self):
-        return len(self._surplus_coproducts) == 0
 
     @property
     def mdim(self):
@@ -184,10 +208,12 @@ class BackgroundEngine(object):
 
     def _rm_product_flow_children(self, bad_pf):
         """
-        This needs desperately to be tested
+        Used only to back-out the links in-progress when a TerminationError is encountered.
+        This needs desperately to be tested. U
         :param bad_pf:
         :return:
         """
+        self._r_stack.clear()
         while len(self._interior_incoming) > 0:
             pf = self.tstack.pop_from_stack()
             self._print('!!!removing %s' % pf)
@@ -213,7 +239,8 @@ class BackgroundEngine(object):
         :return:
         """
         if pf.key in self._lowlinks:
-            self._lowlinks[pf.key] = min(self._lowlink(pf), lowlink)
+            existing = self._lowlinks[pf.key]
+            self._lowlinks[pf.key] = min(existing, lowlink)
         else:
             self._lowlinks[pf.key] = lowlink
 
@@ -263,7 +290,7 @@ class BackgroundEngine(object):
             self._ef_index.append(ef)
             return ef
 
-    def terminate(self, exch, strategy):
+    def terminate(self, exch, strategy) -> ProcessRef | None:
         """
         Find the ProductFlow that terminates a given exchange.  If an exchange has an explicit termination, use it.
         Else if flow / direction / term are already seen, use it.
@@ -335,56 +362,6 @@ class BackgroundEngine(object):
                 print(nums)
                 raise
 
-    '''
-    def compute_lci(self, product_flow, **kwargs):
-        if self.is_in_background(product_flow):
-            num_ad = np.array([[self.tstack.bg_dict(product_flow.index), 0, 1.0]])
-            ad = self.construct_sparse(num_ad, self.tstack.ndim, 1)
-            x, bx = self.compute_bg_lci(ad, **kwargs)
-            return bx
-        else:
-            af, ad, bf = self.make_foreground(product_flow)
-            x_tilde = np.linalg.inv(np.eye(af.shape[0]) - af.todense())[:, 0]
-            ad_tilde = ad * x_tilde
-            x, bx = self.compute_bg_lci(ad_tilde, **kwargs)
-            bf_tilde = csc_matrix(bf * x_tilde)
-            if bx is None:
-                return bf_tilde
-            return bx + bf_tilde
-
-    def compute_bg_lci(self, ad, threshold=1e-8, count=100):
-        """
-        Computes background LCI via iterative matrix multiplication.
-        :param ad: a vector of background activity levels
-        :param threshold: [1e-8] size of the increment (1-norm) relative to the total LCI to finish early
-        :param count: [100] maximum number of iterations to perform
-        :return:
-        """
-        x = csr_matrix(ad)  # tested this with ecoinvent: convert to sparse: 280 ms; keep full: 4.5 sec
-        total = self.construct_sparse([], *x.shape)
-        if self._a_matrix is None:
-            return total, None
-
-        mycount = 0
-        sumtotal = 0.0
-
-        while mycount < count:
-            total += x
-            x = self._a_matrix.dot(x)
-            inc = sum(abs(x).data)
-            if inc == 0:
-                print('exact result')
-                break
-            sumtotal += inc
-            if inc / sumtotal < threshold:
-                break
-            mycount += 1
-        print('completed %d iterations' % mycount)
-
-        b = self._b_matrix * total
-        return total, b
-    '''
-
     def _construct_b_matrix(self):
         """
         b matrix only includes emissions from background + downstream processes.
@@ -409,7 +386,7 @@ class BackgroundEngine(object):
                            for i in self._interior])
         self._a_matrix = self.construct_sparse(num_bg, ndim, ndim)
 
-    '''Deprecated
+    '''required for create_flat_background
     '''
     def foreground_flows(self, search=None, outputs=True):
         for k in self.tstack.foreground_flows(outputs=outputs):
@@ -576,7 +553,7 @@ class BackgroundEngine(object):
             for x in p.references():
                 j = self.check_product_flow(x.flow, p)
                 if j is None:
-                    self._add_ref_product(x.flow, p, multi_term, default_allocation)
+                    self._add_ref_product_deque(x.flow, p, multi_term, default_allocation)
         self._update_component_graph()
         self._all_added = True
 
@@ -597,17 +574,17 @@ class BackgroundEngine(object):
         j = self.check_product_flow(flow, term)
 
         if j is None:
-            try:
-                j = self._add_ref_product(flow, term, multi_term, default_allocation)
-            except TerminationError:
-                print('add_ref_product failed.')
-                return
+            j = self._add_ref_product_deque(flow, term, multi_term, default_allocation)
 
             self._update_component_graph()
         return j
 
+    '''
     def _add_ref_product(self, flow, term, multi_term, default_allocation):
         j = self._create_product_flow(flow, term)
+        if j is None:
+            # _create_product_flow already prints a MissingReference message
+            return
         try:
             self._traverse_term_exchanges(j, multi_term, default_allocation)
         except TerminationError:
@@ -627,14 +604,14 @@ class BackgroundEngine(object):
         """
         rx = parent.process.reference(parent.flow)
 
-        ''' # this could never happen
+        """ # this could never happen
         if not rx.is_reference:
             print('### Nonreference RX found!\nterm: %s\nflow: %s\next_id: %s' % (rx.process,
                                                                                   rx.flow,
                                                                                   rx.process.external_ref))
             rx = parent.process.reference()
             print('    using ref %s\n' % rx)
-        '''
+        """
 
         exchs = parent.process.inventory(ref_flow=rx)  # allocated exchanges
 
@@ -651,7 +628,8 @@ class BackgroundEngine(object):
             if val is None or val == 0:
                 # don't add zero entries (or descendants) to sparse matrix
                 continue
-            if exch.flow == rx.flow and exch.direction == comp_dir(rx.direction) and val == 1.0 and exch.type == 'cutoff':
+            if exch.flow == rx.flow and exch.direction == comp_dir(rx.direction) and\
+                    val == 1.0 and exch.type == 'cutoff':
                 # skip pass-thru flows
                 print('Skipping pass-thru exchange: %s' % exch)
                 continue
@@ -660,28 +638,20 @@ class BackgroundEngine(object):
             term = self.terminate(exch, multi_term)
             if term is None:
                 # cutoff -- add the exchange value to the exterior matrix
-                emission = self._add_emission(exch.flow, exch.direction, exch.termination)  # check, create, and add all at once
+                emission = self._add_emission(exch.flow, exch.direction, exch.termination)  # check, create, and add
                 self.add_cutoff(parent, emission, val)
                 continue
 
             # so it's interior-- does it exist already?
             i = self.check_product_flow(exch.flow, term)
             if i is None:
-                # not visited -- need to visit
-                i = self._create_product_flow(exch.flow, term)
+                i = self._add_ref_product(exch.flow, term, multi_term, default_allocation)
+
                 if i is None:
                     print('Cutting off at Parent process: %s\n%s -X- %s\n' % (parent.process.external_ref,
                                                                               exch.flow.name,
                                                                               term))
                     continue
-                if i.debug:
-                    print('Parent: %s' % parent.process)
-                try:
-                    self._traverse_term_exchanges(i, multi_term, default_allocation)
-                except TerminationError:
-                    self._rm_product_flow_children(i)
-                    raise
-
                 # carry back lowlink, if lower
                 self._set_lowlink(parent, self._lowlink(i))
             elif self.tstack.check_stack(i):
@@ -696,6 +666,164 @@ class BackgroundEngine(object):
         # name an SCC if we've found one
         if self._lowlink(parent) == self.index(parent):
             self.tstack.label_scc(self.index(parent), parent.key)
+    '''
+
+    def _add_ref_product_deque(self, flow, term, multi_term, default_allocation):
+        if len(self._r_stack) != 0:
+            raise DequeError('Recursion stack is not empty')
+        j = self._create_product_flow(flow, term)
+        if j is None:
+            # _create_product_flow already prints a MissingReference message
+            return
+
+        self._dq_put_node_on_stack(j)
+
+        while len(self._r_stack) > 0:
+            try:
+                self._dq_handle_stack(multi_term, default_allocation)
+            except TerminationError:
+                self._rm_product_flow_children(j)
+                print('Termination Error: process %s: ref_flow %s, ' % (j.process.external_ref, j.flow.external_ref))
+
+                raise
+
+        return j
+
+    def _dq_put_node_on_stack(self, parent):
+        """
+        The theory here is that we use both ends of the stack to keep track of what we are doing.
+        The left-hand end is the recursion stack- we push things onto it as we traverse the graph
+        the right-hand end is the parent stack- we use it to keep track of the parent nodes we have
+        processed.  I suspect this will be equal to tstack._stack but I don't feel like investigating.
+
+        When we push a new node onto the stack- we put the node on the right, and a marker object on the left.
+        then we stack the exchanges on top of the marker object.
+        When we have cleared the stack back to the marker object, we know we're done with the node.
+
+        :param parent:
+        :return:
+        """
+        self._r_stack.appendleft(ParentMarker())
+        self._r_stack.append(parent)
+
+        rx = parent.process.reference(parent.flow)
+        exchs = parent.process.inventory(ref_flow=rx)  # allocated exchanges
+
+        self._r_stack.extendleft(list(exchs))
+
+    def _dq_handle_stack(self, multi_term, default_allocation):
+        obj = self._r_stack[0]
+        parent = self._r_stack[-1]
+
+        if isinstance(obj, ParentMarker):
+            """
+            # we have exhausted a parent node's exchanges and arrived back at the node-- we check to see if we've
+            discovered an SCC
+            """
+            # we have completed this parent node
+            self._r_stack.popleft()  # the recursion marker
+            parent = self._r_stack.pop()  # the parent node
+            # name an SCC if we've found one
+            if self._lowlink(parent) == self.index(parent):
+                self.tstack.label_scc(self.index(parent), parent.key)
+            # and we're done
+            return
+
+        elif isinstance(obj, RecurseMarker):
+            """
+            # we have completed recursion-- 
+            The exchange that triggered recursion is next on the stack and we need to handle the parent's lowlink
+            """
+            # carry back lowlink, if lower
+            marker = self._r_stack.popleft()
+            i = marker.term
+            self._set_lowlink(parent, self._lowlink(i))
+
+            ''' # add interior
+            '''
+            exch = self._r_stack.popleft()
+
+            pval = exch.value  # allocated exchange
+
+            # for interior flows-- enforce normative direction
+            if exch.direction == 'Output':
+                pval *= -1
+
+            self.add_interior(parent, i, pval)
+            # and we're done
+            return
+
+        else:
+            """
+            # obj is an exchange
+            We are in the middle of recursion, progressing through a child node's exchanges.  We proceed depending
+            on each exchange's characteristics -- 
+             - exterior--- is a recursive base case
+             - interior, novel--- we must recurse
+             - interior, on tarjan stack--- no recursion necessary but we have to update lowlink
+             - interior, not on tarjan stack--- nothing to do
+            """
+            exch = self._r_stack[0]
+
+            if exch.is_reference:  # in parent.process.reference_entity:
+                raise TypeError('Reference exchange encountered in bg inventory %s' % exch)
+
+            val = exch.value  # allocated exchange value
+
+            if val is None or val == 0:
+                # don't add zero entries (or descendants) to sparse matrix
+                self._r_stack.popleft()
+                return
+
+            if exch.flow == parent.flow and exch.direction == comp_dir(parent.direction) and\
+                    val == 1.0 and exch.type == 'cutoff':
+                # skip pass-thru flows
+                print('Skipping pass-thru exchange: %s' % exch)
+                self._r_stack.popleft()
+                return
+
+            # normal non-reference exchange. Either a dependency (if interior) or a cutoff (if exterior).
+            term = self.terminate(exch, multi_term)
+
+            if term is None:
+                # cutoff -- add the exchange value to the exterior matrix
+                exch = self._r_stack.popleft()  # finished with this exchange
+                emission = self._add_emission(exch.flow, exch.direction, exch.termination)  # check, create, and add
+                self.add_cutoff(parent, emission, val)
+
+            else:
+                # interior exchange
+                if exch.direction == 'Output':
+                    val *= -1
+
+                i = self.check_product_flow(exch.flow, term)
+
+                if i is None:
+                    # no product flow exists
+                    i = self._create_product_flow(exch.flow, term)
+                    if i is None:
+                        # MissingReference cutoff
+                        print('Cutting off at Parent process: %s\n%s -X- %s\n' % (parent.process.external_ref,
+                                                                                  exch.flow.name,
+                                                                                  term))
+                        return
+
+                    # we leave the exchange on the stack, and recurse into the target node
+                    self._r_stack.appendleft(RecurseMarker(i))
+                    self._dq_put_node_on_stack(i)
+                    return
+
+                elif self.tstack.check_stack(i):
+                    # visited and currently on stack - carry back index if lower
+                    self._set_lowlink(parent, self.index(i))
+
+                else:
+                    # visited, not on stack- nothing to do with lowlink
+                    pass
+
+                self._r_stack.popleft()
+
+                self.add_interior(parent, i, val)
 
     def add_cutoff(self, parent, emission, val):
         """
