@@ -1,13 +1,15 @@
 from setuptools import setup, find_packages
 
 requires = [
-    "antelope_core>=0.2.4.1",
+    "antelope_core>=0.2.6",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.6   2024-06-06 - factor out BackgroundLayer in preparation for dynamic background. 
+ 
 0.2.4.1 2024-04-24 - refactor recursion out of Tarjan algorithm; write LciTester
                      depends on antelope_core 0.2.4.1 for search pagination
 
@@ -37,7 +39,7 @@ Change Log
 """
 
 
-VERSION = '0.2.4.1'
+VERSION = '0.2.6'
 
 setup(
     name="antelope_background",

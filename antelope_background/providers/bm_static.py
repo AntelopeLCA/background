@@ -7,7 +7,7 @@ import time
 from abc import ABC
 
 from antelope_core.archives import LcArchive, InterfaceError
-from ..background.flat_background import FlatBackground, SUPPORTED_FILETYPES, ORDERING_SUFFIX
+from ..engine.flat_background import FlatBackground, SUPPORTED_FILETYPES, ORDERING_SUFFIX
 from ..background.implementation import TarjanBackgroundImplementation, TarjanConfigureImplementation
 from .check_terms import termination_test
 
@@ -72,10 +72,34 @@ class TarjanBackground(LcArchive, ABC):
         else:
             raise InterfaceError(iface)
 
-    def create_flat_background(self, index, save_after=None, prefer=None, **kwargs):
+    def _make_prefer_dict(self, prefer_arg, update=False):
+        prefer_dict = {k: v for k, v in self._prefer.items()}
+        if prefer_arg is not None:
+            if isinstance(prefer_arg, dict):
+                for k, v in prefer_arg.items():
+                    if k is None:
+                        prefer_dict[None].extend(_ref(z) for z in v)
+                    else:
+                        prefer_dict[_ref(k)] = _ref(v)
+            elif hasattr(prefer_arg, '__iter__'):
+                try:
+                    for k, v in prefer_arg:
+                        if k is None:
+                            prefer_dict[None].extend(_ref(z) for z in v)
+                        else:
+                            prefer_dict[_ref(k)] = _ref(v)
+                except ValueError:  # too many values to unpack
+                    prefer_dict[None].extend(_ref(z) for z in prefer_arg)
+            else:
+                raise TypeError('Unable to parse preferred-provider specification')
+        if update:
+            self._prefer = prefer_dict
+        return prefer_dict
+
+    def create_flat_background(self, query, save_after=None, prefer=None, **kwargs):
         """
         Create an ordered background, save it, and instantiate it as a flat background
-        :param index: index interface to use for the engine
+        :param query: interface to use for the engine
         :param save_after: trigger save-after (note: does not override init value)
         :param prefer: specify preferred providers.  Because I am so sloppy, this routine has been written to accept
          all kinds of possible formats for input:
@@ -97,39 +121,31 @@ class TarjanBackground(LcArchive, ABC):
         :return:
         """
         if self._flat is None:
-            prefer_dict = {k: v for k, v in self._prefer.items()}
-            if prefer is not None:
-                if isinstance(prefer, dict):
-                    for k, v in prefer.items():
-                        if k is None:
-                            prefer_dict[None].extend(_ref(z) for z in v)
-                        else:
-                            prefer_dict[_ref(k)] = _ref(v)
-                elif hasattr(prefer, '__iter__'):
-                    try:
-                        for k, v in prefer:
-                            if k is None:
-                                prefer_dict[None].extend(_ref(z) for z in v)
-                            else:
-                                prefer_dict[_ref(k)] = _ref(v)
-                    except ValueError:  # too many values to unpack
-                        prefer_dict[None].extend(_ref(z) for z in prefer)
-                else:
-                    raise TypeError('Unable to parse preferred-provider specification')
-
+            prefer_dict = self._make_prefer_dict(prefer)
             print('Creating flat background')
             start = time.time()
-            self._flat = FlatBackground.from_index(index, preferred=prefer_dict, **kwargs)
-            self._add_name(index.origin, self.source, rewrite=True)
+            self._flat = FlatBackground.from_query(query, preferred=prefer_dict, **kwargs)
+            self._add_name(query.origin, self.source, rewrite=True)
             print('Completed in %.3g sec' % (time.time() - start))
             if save_after or self._save_after:
                 self.write_to_file()  # otherwise, the user / catalog must explicitly request it
+        else:
+            self._flat.map_contexts(query)
         return self._flat
 
     def reset(self):
         self._flat = None
 
-    def write_to_file(self, filename=None, gzip=False, complete=True, **kwargs):
+    def write_to_file(self, filename=None, gzip=False, complete=True, domesticate=None, **kwargs):
+        """
+
+        :param filename:
+        :param gzip: not used
+        :param complete:
+        :param domesticate: not used
+        :param kwargs:
+        :return:
+        """
         if filename is None:
             filename = self.source
         self._flat.write_to_file(filename, complete=complete, **kwargs)

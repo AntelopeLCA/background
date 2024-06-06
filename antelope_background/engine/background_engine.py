@@ -125,13 +125,13 @@ class BackgroundEngine(object):
         """
         Construct an ordered background matrix from a query that implements basic, index and exchange.
         Required routes:
-         query.get() <- for all processes and flows
-         query.count('process')
-         query.processes() <- complete
-         flow.targets()
-         process.references()
-         process.reference(ref_flow)
-         process.inventory(ref_flow)
+         B query.get() <- for all processes and flows
+         I query.count('process')
+         I query.processes() <- complete
+         I flow.targets()
+         B process.references()
+         B process.reference(ref_flow)
+         E process.inventory(ref_flow)
 
          process.__getitem__() <-- SpatialScope (only used in rare cases)
 

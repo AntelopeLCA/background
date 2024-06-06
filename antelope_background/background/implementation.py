@@ -3,8 +3,7 @@ from antelope import check_direction, comp_dir
 from antelope.models import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
-
-from .flat_background import FlatBackground
+from antelope_core.archives import ArchiveError
 
 
 class InvalidRefFlow(Exception):
@@ -45,27 +44,26 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     implementation for retrieving entities and contexts.
     """
 
-    @classmethod
-    def from_file(cls, res, savefile, **kwargs):
-        """
-
-        :param res: data resource providing index information
-        :param savefile: serialized flat background
-        :return:
-        """
-        im = cls(res)
-        im._index = res.make_interface('index')
-        im._flat = FlatBackground.from_file(savefile, **kwargs)
-        return im
-
     """
     basic implementation overrides
     """
     def __getitem__(self, item):
         return self._fetch(item)
 
+    '''
     def _fetch(self, external_ref, **kwargs):
         return self._index.get(external_ref, **kwargs)
+
+    '''
+    def _fetch(self, external_ref, **kwargs):
+        """
+        we always get from the index implementation because we don't want to load every object just to refer to it
+        :param external_ref:
+        :param kwargs:
+        :return:
+        """
+        ix_e = next(self._index._iface('index')).get(external_ref, **kwargs)
+        return self._index.make_ref(ix_e)
 
     """
     background implementation
@@ -82,9 +80,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             if hasattr(self._archive, 'create_flat_background'):
                 self._flat = self._archive.create_flat_background(self._index, **kwargs)
             else:
-                raise AssertionError  # how would we ever get here?
+                raise ArchiveError('No create_flat_background: %s' % self._archive)  # how would we ever get here?
                 # self._flat = FlatBackground.from_index(self._index, **kwargs)
-            self._flat.map_contexts(self._index)
         return True
 
     def _check_ref(self, arg, opt_arg):

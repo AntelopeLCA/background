@@ -1,6 +1,6 @@
 from .providers import TarjanBackground, termination_test
 from .background import TarjanBackgroundImplementation
-import os
+
 
 __all__ = ['init_fcn', 'tarjan_background', 'TarjanBackground', 'termination_test']
 
@@ -35,10 +35,7 @@ def tarjan_background(res, source=None, **kwargs):
      exists, will save after construction)
     :return:
     """
-    if source and os.path.exists(source):
-        return TarjanBackgroundImplementation.from_file(res, source, **kwargs)
-    else:
-        tb = TarjanBackground(source, save_after=True, **kwargs)
-        bg = tb.make_interface('background')
-        bg.setup_bm(res.make_interface('index'))
-        return bg
+    tb = TarjanBackground(source, save_after=True, **kwargs)
+    bg = tb.make_interface('background')
+    bg.setup_bm(res.make_interface('index'))
+    return bg

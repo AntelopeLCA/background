@@ -8,11 +8,11 @@ from scipy.sparse import eye
 from scipy.io import savemat, loadmat
 
 import os
-from collections import namedtuple
 
 from antelope import CONTEXT_STATUS_, comp_dir  # , num_dir
 from antelope.models import UnallocatedExchange, Exchange
-from ..engine import BackgroundEngine
+from .background_layer import BackgroundLayer, TermRef, ExchDef
+from .background_engine import BackgroundEngine
 from antelope_core import from_json, to_json
 
 
@@ -23,65 +23,6 @@ _FLATTEN_AF = False
 
 class NoLciDatabase(Exception):
     pass
-
-
-class TermRef(object):
-    def __init__(self, flow_ref, direction, term_ref, scc_id=None):
-        """
-
-        :param flow_ref:
-        :param direction: direction w.r.t. term
-        :param term_ref:
-        :param scc_id: None or 0 for singleton /emission; external_ref of a contained process for SCC
-        """
-        self._f = str(flow_ref)  # some flows were serialized with integer refs...
-        self._d = {'Input': 0, 'Output': 1, 0: 0, 1: 1}[direction]
-        # self._d = num_dir(direction)
-        self._t = term_ref
-        self._s = 0
-        self.scc_id = scc_id
-
-    @property
-    def term_ref(self):
-        return self._t
-
-    @property
-    def flow_ref(self):
-        return self._f
-
-    @property
-    def direction(self):
-        return ('Input', 'Output')[self._d]
-
-    @property
-    def scc_id(self):
-        if self._s == 0:
-            return []
-        return self._s
-
-    @scc_id.setter
-    def scc_id(self, item):
-        if item is None:
-            self._s = 0
-        else:
-            self._s = item
-
-    def __array__(self):
-        return self.flow_ref, self._d, self.term_ref, self._s
-
-    def __iter__(self):
-        return iter(self.__array__())
-
-
-"""
-An ExchDef is a serialized exchange definition. It should contain:
-.process = a string node ref
-.flow = a string flow ref
-.direction = a valid direction
-.term = EITHER a string term_ref (interior flow) OR a tuple of strings (context) OR None (cutoff)
-.value = float
-"""
-ExchDef = namedtuple('ExchDef', ('process', 'flow', 'direction', 'term', 'value'))
 
 
 def _iterate_a_matrix(a, y, threshold=1e-8, count=100, quiet=False, solver=None):
@@ -178,22 +119,24 @@ def flatten(af, ad, bf, ts):
 ORDERING_SUFFIX = '.ordering.json.gz'
 
 
-class FlatBackground(object):
+class FlatBackground(BackgroundLayer):
     """
     Static, ordered background stored in an easily serializable way
     """
     @classmethod
-    def from_index(cls, index, quiet=True, preferred=None, **kwargs):
+    def from_query(cls, query, quiet=True, preferred=None, **kwargs):
         """
-        :param index: an index interface with operable processes() and terminate()
+        :param query: an index + exchange interface with operable processes(), terminate(), get() and inventory()
         :param quiet: passed to cls
         :param preferred: a preferred-provider dict as specified in BackgroundEngine init
         :param kwargs: passed to add_all_ref_products()
         :return:
         """
-        be = BackgroundEngine(index, preferred=preferred)
+        be = BackgroundEngine(query, preferred=preferred)
         be.add_all_ref_products(**kwargs)
-        return cls.from_background_engine(be, quiet=quiet)
+        flat = cls.from_background_engine(be, quiet=quiet)
+        flat.map_contexts(query)
+        return flat
 
     @classmethod
     def from_background_engine(cls, be, **kwargs):
@@ -484,14 +427,14 @@ class FlatBackground(object):
         idx = self.index_of(process, ref_flow)
         if self.is_in_background(process, ref_flow):
             for i in self._ad[idx, :].nonzero()[1]:
-                yield self.fg[i]
+                yield self._fg[i]
             for i in self._A[idx, :].nonzero()[1]:
-                yield self.bg[i]
+                yield self._bg[i]
         else:
             for i in self._af[idx, :].nonzero()[1]:
-                yield self.fg[i]
+                yield self._fg[i]
 
-    def emitters(self, flow_ref, direction, context):
+    def emitters(self, flow_ref, direction, context=None):
         """
         We have to test whether our serialized context matches the canonical one that was submitted. we also want to
         internalize context serialization (search term: '; ')
@@ -512,9 +455,9 @@ class FlatBackground(object):
                     continue
             # found an eligible external flow
             for i in self._bf[idx, :].nonzero()[1]:
-                yielded.add(self.fg[i])
+                yielded.add(self._fg[i])
             for i in self._B[idx, :].nonzero()[1]:
-                yielded.add(self.bg[i])
+                yielded.add(self._bg[i])
         for rx in yielded:
             yield rx
 
