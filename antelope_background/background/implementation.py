@@ -4,6 +4,10 @@ from antelope.models import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
 from antelope_core.archives import ArchiveError
+from antelope_core.implementations.quantity import QuantityConversionError, NoFactorsFound
+from antelope_core.lcia_results import LciaResult
+
+from scipy.sparse import csr_matrix
 
 
 class InvalidRefFlow(Exception):
@@ -64,6 +68,9 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         """
         ix_e = next(self._index._iface('index')).get(external_ref, **kwargs)
         return self._index.make_ref(ix_e)
+
+    def get_canonical(self, quantity_ref):
+        return self._index.get_canonical(quantity_ref)
 
     """
     background implementation
@@ -139,7 +146,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     def exterior_flows(self, search=None, **kwargs):
         self.check_bg()
         for ex in self._flat.ex:
-            c = ex.term_ref
+            c = self._flat.context_map.get(ex.term_ref)
             f = self[ex.flow_ref]
             yield ExteriorFlow.from_background(f, comp_dir(ex.direction), c)  # serialization is opposite sense from API spec
 
@@ -247,6 +254,64 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         self.check_bg()
         for x in self._direct_exchanges(None, self._flat.sys_lci(demand)):
             yield x
+
+    def _get_quantity_conversion(self, q_ref, ex):
+        f = self[ex.flow_ref]
+        loc = f.locale
+        cx = self._flat.context_map.get(ex.term_ref)
+        qr = f.lookup_cf(q_ref, cx, loc)
+        if isinstance(qr, QuantityConversionError):
+            try:
+                qr = qr.repair(f)
+            except NoFactorsFound:
+                pass
+        return qr
+
+    def _add_lcia_component(self, res, term, node_weight, m_index, dense_qcs):
+        key = term.term_ref, term.flow_ref
+        comp = self[term.term_ref]
+        sub_res = LciaResult(res.quantity)
+        sub_res.add_component(term.term_ref, comp)
+        dense_exch_defs = self._flat.generate_ems_by_index(term.term_ref, term.flow_ref, m_index)
+        for i, x in enumerate(self._direct_exchanges(comp, dense_exch_defs)):
+            sub_res.add_score(comp.external_ref, x, dense_qcs[i])
+        res.add_summary(key, comp, node_weight, sub_res)
+
+    def _add_lcia_summary(self, res, term, node_weight, unit_score):
+        key = term.term_ref, term.flow_ref
+        comp = self[term.term_ref]
+        res.add_summary(key, comp, node_weight, unit_score)
+
+    def deep_lcia(self, process, quantity_ref, ref_flow=None, detailed=False, **kwargs):
+        process, ref_flow = self._check_ref(process, ref_flow)
+        q_ref = self.get_canonical(quantity_ref)
+        qcs = [self._get_quantity_conversion(q_ref, ex) for ex in self._flat.ex]
+        char_vector = csr_matrix([k.value for k in qcs])
+        _, nzc = char_vector.nonzero()
+        dense_qcs = [qcs[k] for k in nzc]
+        sf, s = self._flat.unit_scores(char_vector)
+        xf, x = self._flat.activity_levels(process, ref_flow)
+
+        res = LciaResult(q_ref)
+        for i in range(self._flat.pdim):
+            if xf[0, i] != 0:
+                if sf[0, i] != 0:
+                    term = self._flat.fg[i]
+                    if detailed:
+                        self._add_lcia_component(res, term, xf[0, i], nzc, dense_qcs)
+                    else:
+                        self._add_lcia_summary(res, term, xf[0, i], sf[0, i])
+
+        for i in range(self._flat.ndim):
+            if x[0, i] != 0:
+                if s[0, i] != 0:
+                    term = self._flat.bg[i]
+                    if detailed:
+                        self._add_lcia_component(res, term, x[0, i], nzc, dense_qcs)
+                    else:
+                        self._add_lcia_summary(res, term, x[0, i], s[0, i])
+
+        return res
 
 
 class TarjanConfigureImplementation(CoreConfigureImplementation):

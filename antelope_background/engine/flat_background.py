@@ -423,6 +423,21 @@ class FlatBackground(BackgroundLayer):
                 _term = self.context_map.get(term.term_ref)
             yield ExchDef(node_ref, term.flow_ref, dirn, _term, dat)
 
+    def generate_ems_by_index(self, process, ref_flow, m_index):
+        if self.is_in_background(process, ref_flow):
+            index = self._bg_index[process, ref_flow]
+            ems = self._B[:, index]
+        else:
+            index = self._fg_index[process, ref_flow]
+            ems = self._bf[:, index]
+
+        for i in m_index:
+            term = self._ex[i]
+            dat = ems[i, 0]
+            dirn = comp_dir(term.direction)
+            cx = self.context_map.get(term.term_ref)
+            yield ExchDef(process, term.flow_ref, dirn, cx, dat)
+
     def consumers(self, process, ref_flow):
         idx = self.index_of(process, ref_flow)
         if self.is_in_background(process, ref_flow):
@@ -621,6 +636,35 @@ class FlatBackground(BackgroundLayer):
 
         for x in missed:  #
             yield x
+
+    def unit_scores(self, char_vector):
+        """
+        Returns the unit impact scores based on the supplied characterization vector
+        :param char_vector:
+        :return: sf, s -- unit scores for foreground and background
+        """
+        sf = char_vector * self._bf
+        s = char_vector * self._B
+        return sf, s
+
+    def activity_levels(self, process, ref_flow, **kwargs):
+        """
+        Returns the background activity levels resulting from a unit of the designated process.
+
+        :param process:
+        :param ref_flow:
+        :return: (xf, x) the foreground and background activity levels
+        """
+        if self.is_in_background(process, ref_flow):
+            ad = _unit_column_vector(self.ndim, self._bg_index[process, ref_flow])
+            xf = csr_matrix((1, self.pdim))
+            x = _iterate_a_matrix(self._A, ad, **kwargs)
+            return xf, x.transpose()
+        else:
+            xf = self._x_tilde(process, ref_flow, **kwargs)
+            ad_tilde = self._ad.dot(xf)
+            x = _iterate_a_matrix(self._A, ad_tilde, **kwargs)
+            return xf.transpose(), x.transpose()
 
     def _write_ordering(self, filename):
         if not filename.endswith(ORDERING_SUFFIX):

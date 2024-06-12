@@ -1,13 +1,17 @@
 from setuptools import setup, find_packages
 
+VERSION = '0.2.6.2'
+
 requires = [
-    "antelope_core>=0.2.6",
+    "antelope_core>=0.2.6.2",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.6.2 2024-06-11 - add deep_lcia()
+
 0.2.6   2024-06-06 - factor out BackgroundLayer in preparation for dynamic background. 
  
 0.2.4.1 2024-04-24 - refactor recursion out of Tarjan algorithm; write LciTester
@@ -37,9 +41,6 @@ Change Log
 
 0.1.0 - 2021-01-06 - first published release
 """
-
-
-VERSION = '0.2.6'
 
 setup(
     name="antelope_background",
