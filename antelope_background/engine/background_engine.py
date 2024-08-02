@@ -793,9 +793,6 @@ class BackgroundEngine(object):
 
             else:
                 # interior exchange
-                if exch.direction == 'Output':
-                    val *= -1
-
                 i = self.check_product_flow(exch.flow, term)
 
                 if i is None:
@@ -806,6 +803,11 @@ class BackgroundEngine(object):
                         print('Cutting off at Parent process: %s\n%s -X- %s\n' % (parent.process.external_ref,
                                                                                   exch.flow.name,
                                                                                   term))
+                        # we recourse to the cutoff procedure
+                        exch = self._r_stack.popleft()  # finished with this exchange
+                        emission = self._add_emission(exch.flow, exch.direction,
+                                                      None)  # check, create, and add
+                        self.add_cutoff(parent, emission, val)
                         return
 
                     # we leave the exchange on the stack, and recurse into the target node
@@ -822,6 +824,9 @@ class BackgroundEngine(object):
                     pass
 
                 self._r_stack.popleft()
+
+                if exch.direction == 'Output':
+                    val *= -1
 
                 self.add_interior(parent, i, val)
 

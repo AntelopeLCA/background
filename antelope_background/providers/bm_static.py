@@ -13,6 +13,8 @@ from .check_terms import termination_test
 
 
 def _ref(obj):
+    if obj is None:
+        return obj
     if hasattr(obj, 'external_ref'):
         return obj.external_ref
     return str(obj)
