@@ -169,17 +169,24 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             # to filter cutoffs vs emissions, first need to detect if x is an exterior exchange-- which we don't know how to do just yet
             yield ExchangeValue(self[x.process], self[x.flow], x.direction, termination=x.term, value=x.value)
 
-    def _direct_exchanges(self, node, x_iter):
+    def _direct_exchanges(self, process_ref, flow_ref, x_iter):
         """
         This expects an iterable of ExchDefs, which are clearly redundant (only used for this)
-        :param node:
+        :param process_ref:
+        :param flow_ref:
         :param x_iter:
         :return:
         """
+        node = self[process_ref]
+        inv_rx = bool(node.reference_value(flow_ref) < 0)
         for x in x_iter:
-            if node is None:
-                node = self[x.process]
-            yield ExchangeValue(node, self[x.flow], x.direction, termination=x.term, value=x.value)
+            if inv_rx:
+                dirn = comp_dir(x.direction)
+                val = x.value * -1
+            else:
+                dirn = x.direction
+                val = x.value
+            yield ExchangeValue(node, self[x.flow], dirn, termination=x.term, value=val)
 
     def consumers(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
@@ -209,8 +216,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
 
     def dependencies(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        node = self[process]
-        for x in self._direct_exchanges(node, self._flat.dependencies(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.dependencies(process, ref_flow)):
             yield x
 
     def emissions(self, process, ref_flow=None, **kwargs):
@@ -228,32 +234,31 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
 
     def _exterior(self, process, ref_flow=None):
         process, ref_flow = self._check_ref(process, ref_flow)
-        node = self[process]
-        for x in self._direct_exchanges(node, self._flat.exterior(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.exterior(process, ref_flow)):
             yield x
 
     def ad(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        node = self[process]
-        for x in self._direct_exchanges(node, self._flat.ad(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.ad(process, ref_flow)):
             yield x
 
     def bf(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        node = self[process]
-        for x in self._direct_exchanges(node, self._flat.bf(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.bf(process, ref_flow)):
             yield x
 
     def lci(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        node = self[process]
-        for x in self._direct_exchanges(node, self._flat.lci(process, ref_flow, **kwargs)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.lci(process, ref_flow, **kwargs)):
             yield x
 
     def sys_lci(self, demand, **kwargs):
         self.check_bg()
-        for x in self._direct_exchanges(None, self._flat.sys_lci(demand)):
-            yield x
+        node = None
+        for x in self._flat.sys_lci(demand):
+            if node is None:
+                node = self[x.process]
+            yield ExchangeValue(node, self[x.flow], x.direction, termination=x.term, value=x.value)
 
     def _get_quantity_conversion(self, q_ref, ex):
         f = self[ex.flow_ref]
@@ -273,7 +278,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         sub_res = LciaResult(res.quantity)
         sub_res.add_component(term.term_ref, comp)
         dense_exch_defs = self._flat.generate_ems_by_index(term.term_ref, term.flow_ref, m_index)
-        for i, x in enumerate(self._direct_exchanges(comp, dense_exch_defs)):
+        for i, x in enumerate(self._direct_exchanges(comp, term.flow_ref, dense_exch_defs)):
             sub_res.add_score(comp.external_ref, x, dense_qcs[i])
         res.add_summary(key, comp, node_weight, sub_res)
 
