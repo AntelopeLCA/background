@@ -4,7 +4,7 @@ from antelope.models import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
 from antelope_core.archives import ArchiveError
-from antelope_core.implementations.quantity import QuantityConversionError, NoFactorsFound
+from antelope_core.implementations.quantity import QuantityConversionError, NoFactorsFound, CO2QuantityConversion
 from antelope_core.lcia_results import LciaResult
 
 from scipy.sparse import csr_matrix
@@ -67,7 +67,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         :return:
         """
         ix_e = next(self._index._iface('index')).get(external_ref, **kwargs)
-        return self._index.make_ref(ix_e)
+        return ix_e.make_ref(self._index)
 
     def get_canonical(self, quantity_ref):
         return self._index.get_canonical(quantity_ref)
@@ -169,7 +169,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
             # to filter cutoffs vs emissions, first need to detect if x is an exterior exchange-- which we don't know how to do just yet
             yield ExchangeValue(self[x.process], self[x.flow], x.direction, termination=x.term, value=x.value)
 
-    def _direct_exchanges(self, process_ref, flow_ref, x_iter):
+    def _direct_exchanges(self, process_ref, flow_ref, x_iter, corr=False):
         """
         This expects an iterable of ExchDefs, which are clearly redundant (only used for this)
         :param process_ref:
@@ -178,7 +178,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         :return:
         """
         node = self[process_ref]
-        inv_rx = bool(node.reference_value(flow_ref) < 0)
+        inv_rx = bool(node.reference_value(flow_ref) < 0) and corr
         for x in x_iter:
             if inv_rx:
                 dirn = comp_dir(x.direction)
@@ -216,7 +216,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
 
     def dependencies(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        for x in self._direct_exchanges(process, ref_flow, self._flat.dependencies(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.dependencies(process, ref_flow), corr=True):
             yield x
 
     def emissions(self, process, ref_flow=None, **kwargs):
@@ -239,7 +239,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
 
     def ad(self, process, ref_flow=None, **kwargs):
         process, ref_flow = self._check_ref(process, ref_flow)
-        for x in self._direct_exchanges(process, ref_flow, self._flat.ad(process, ref_flow)):
+        for x in self._direct_exchanges(process, ref_flow, self._flat.ad(process, ref_flow), corr=True):
             yield x
 
     def bf(self, process, ref_flow=None, **kwargs):
@@ -270,6 +270,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
                 qr = qr.repair(f)
             except NoFactorsFound:
                 pass
+        if f.quell_co2:
+            return CO2QuantityConversion.copy(qr)
         return qr
 
     def _add_lcia_component(self, res, term, node_weight, m_index, dense_qcs):

@@ -1,15 +1,19 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.6.2'
+VERSION = '0.2.7'
 
 requires = [
-    "antelope_core>=0.2.6.2",
+    "antelope_core>=0.2.7",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.2.7   2024-09-10 - correct directions of dependencies for treatment processes 
+                     enable quell_biogenic_co2 on deep_lcia()
+                     couple of bugs on context + index handling
+                      
 0.2.6.2 2024-06-11 - add deep_lcia()
 
 0.2.6   2024-06-06 - factor out BackgroundLayer in preparation for dynamic background. 

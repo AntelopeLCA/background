@@ -243,7 +243,9 @@ class FlatBackground(BackgroundLayer):
         for k in self._ex:
             if k.term_ref not in self.context_map:
                 term = tuple(k.term_ref.split('; '))  # de-serialize
-                self.context_map[k.term_ref] = index.get_context(term)
+                naive_context = index.get_context(term)
+                canonical_context = index._tm[naive_context]  # not sure about this
+                self.context_map[k.term_ref] = canonical_context
 
     def __init__(self, foreground, background, exterior, af, ad, bf, lci_db=None, quiet=True):
         """
