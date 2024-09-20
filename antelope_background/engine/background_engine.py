@@ -290,7 +290,7 @@ class BackgroundEngine(object):
             self._ef_index.append(ef)
             return ef
 
-    def terminate(self, exch, strategy) -> ProcessRef | None:
+    def terminate(self, exch, strategy):
         """
         Find the ProductFlow that terminates a given exchange.  If an exchange has an explicit termination, use it.
         Else if flow / direction / term are already seen, use it.
