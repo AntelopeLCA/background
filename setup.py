@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.7'
+VERSION = '0.3.0-pre'
 
 requires = [
     "antelope_core>=0.2.7",
@@ -10,6 +10,8 @@ requires = [
 
 """
 Change Log
+0.3.0-pre 2024-09-22 workshop pre-release. removed a weird noncompatible typing hint
+
 0.2.7   2024-09-10 - correct directions of dependencies for treatment processes 
                      enable quell_biogenic_co2 on deep_lcia()
                      couple of bugs on context + index handling
