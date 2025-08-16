@@ -11,8 +11,8 @@ from collections import deque
 import numpy as np
 from scipy.sparse import csr_matrix  # , csc_matrix,
 
-from antelope import comp_dir
-from antelope.refs import ProcessRef
+from antelope import comp_dir, EntityNotFound, NoReference
+# from antelope.refs import ProcessRef
 from antelope_core.contexts import NullContext
 
 from .tarjan_stack import TarjanStack
@@ -54,9 +54,16 @@ class RepeatAdjustment(Exception):
     pass
 
 
-class TerminationError(Exception):
+class AmbiguousTermination(Exception):
     """
     This indicates that an ambiguous termination was encountered, with no valid means to resolve the ambiguity
+    """
+    pass
+
+
+class _NoTerminationFound(Exception):
+    """
+    This indicates that no termination was found and the exchange should get cut-off
     """
     pass
 
@@ -259,6 +266,10 @@ class BackgroundEngine(object):
         else:
             return None
 
+    def _add_missing_reference(self, flow, term):
+        if (term.external_ref, flow.external_ref) not in self.missing_references:
+            self.missing_references.append((term.external_ref, flow.external_ref))
+
     def _create_product_flow(self, flow, term):
         """
 
@@ -272,8 +283,7 @@ class BackgroundEngine(object):
             pf = ProductFlow(index, flow, term)
         except NoMatchingReference:
             print('### !!! NO MATCHING REFERENCE !!! ###')  # fix this if it comes up again
-            if (term.external_ref, flow.external_ref) not in self.missing_references:
-                self.missing_references.append((term.external_ref, flow.external_ref))
+            self._add_missing_reference(flow, term)
             return None
         self._add_product_flow(pf)
         return pf
@@ -301,47 +311,62 @@ class BackgroundEngine(object):
         :return:
         """
         if isinstance(exch.termination, str):
-            return self.fg.get(exch.termination)
-        else:
-            if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
-                return None
-            if exch.flow.external_ref in self._preferred_processes:
-                term = self._preferred_processes[exch.flow.external_ref]
-                if term is None:
-                    return None
-                if not hasattr(term, 'entity_type'):
-                    term = self.fg.get(term)
-                if term.entity_type != 'process':
-                    raise TypeError('%s: Bad preferred provider %s' % (exch.flow.external_ref, term))
-                return term
+            try:
+                node = self.fg.get(exch.termination)
+                try:
+                    node.reference(exch.flow)
+                    return node
+                except NoReference:
+                    print('%s: %s [%s]: Target %s MISSING REFERENCE' % (exch.process.uuid, exch.flow.name,
+                                                                        exch.direction, exch.termination))
+                    self._add_missing_reference(exch.flow, node)
 
-            terms = [t for t in self.fg.targets(exch.flow, direction=exch.direction)]
-            if len(terms) == 0:
-                return None
-            elif len(terms) == 1:
+            except EntityNotFound:
+                print('%s: %s [%s]: unknown termination %s' % (exch.process.uuid, exch.flow.name, exch.direction,
+                                                               exch.termination))
+
+        if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
+            return None
+        if exch.flow.external_ref in self._preferred_processes:
+            term = self._preferred_processes[exch.flow.external_ref]
+            if term is None:
+                raise _NoTerminationFound
+            if not hasattr(term, 'entity_type'):
+                term = self.fg.get(term)
+            if term.entity_type != 'process':
+                raise TypeError('%s: Bad preferred provider %s' % (exch.flow.external_ref, term))
+            return term
+
+        terms = [t for t in self.fg.targets(exch.flow, direction=exch.direction)
+                 if t.external_ref != exch.process.external_ref]  # prevent self-termination
+        if len(terms) == 0:
+            raise _NoTerminationFound
+        elif len(terms) == 1:
+            term = terms[0]
+        else:
+            t_map = {t.external_ref: t for t in terms}
+            pref = self._preferred_processes[None]
+            for p in pref:
+                if p in t_map:
+                    return t_map[p]
+            if strategy == 'abort':
+                print('flow: %s\nAmbiguous termination found for %s: %s' % (exch.flow.external_ref,
+                                                                            exch.direction, exch.flow))
+                raise AmbiguousTermination
+            elif strategy == 'first':
                 term = terms[0]
+            elif strategy == 'last':
+                term = terms[-1]
+            elif strategy == 'cutoff':
+                raise _NoTerminationFound
+            elif strategy == 'mix':
+                raise NotImplementedError('MIX not presently supported (for some reason)')
+                # return self.fg.mix(exch.flow, exch.direction)
             else:
-                t_map = {t.external_ref: t for t in terms}
-                pref = self._preferred_processes[None]
-                for p in pref:
-                    if p in t_map:
-                        return t_map[p]
-                if strategy == 'abort':
-                    print('flow: %s\nAmbiguous termination found for %s: %s' % (exch.flow.external_ref,
-                                                                                exch.direction, exch.flow))
-                    raise TerminationError
-                elif strategy == 'first':
-                    term = terms[0]
-                elif strategy == 'last':
-                    term = terms[-1]
-                elif strategy == 'cutoff':
-                    return None
-                elif strategy == 'mix':
-                    raise NotImplementedError('MIX not presently supported (for some reason)')
-                    # return self.fg.mix(exch.flow, exch.direction)
-                else:
-                    raise KeyError('Unknown multi-termination strategy %s' % strategy)
-            return term  # targets() returns refs- no need to get again
+                raise KeyError('Unknown multi-termination strategy %s' % strategy)
+        if term is None:
+            raise _NoTerminationFound
+        return term  # targets() returns refs- no need to get again
 
     @staticmethod
     def construct_sparse(nums, nrows, ncols):
@@ -681,7 +706,7 @@ class BackgroundEngine(object):
         while len(self._r_stack) > 0:
             try:
                 self._dq_handle_stack(multi_term, default_allocation)
-            except TerminationError:
+            except AmbiguousTermination:
                 self._rm_product_flow_children(j)
                 print('Termination Error: process %s: ref_flow %s, ' % (j.process.external_ref, j.flow.external_ref))
 
@@ -783,10 +808,17 @@ class BackgroundEngine(object):
                 return
 
             # normal non-reference exchange. Either a dependency (if interior) or a cutoff (if exterior).
-            term = self.terminate(exch, multi_term)
+            try:
+                term = self.terminate(exch, multi_term)
+            except _NoTerminationFound:
+                # cutoff -- add the exchange value to the exterior matrix
+                exch = self._r_stack.popleft()  # finished with this exchange
+                emission = self._add_emission(exch.flow, exch.direction, None)  # check, create, and add
+                self.add_cutoff(parent, emission, val)
+                return
 
             if term is None:
-                # cutoff -- add the exchange value to the exterior matrix
+                # elementary -- add the exchange value to the exterior matrix
                 exch = self._r_stack.popleft()  # finished with this exchange
                 emission = self._add_emission(exch.flow, exch.direction, exch.termination)  # check, create, and add
                 self.add_cutoff(parent, emission, val)

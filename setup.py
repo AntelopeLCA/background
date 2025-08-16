@@ -1,15 +1,19 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.3.0-pre'
+VERSION = '0.3.2'
 
 requires = [
-    "antelope_core>=0.2.7",
+    "antelope_core>=0.3.6",
     "scipy>=1.5",
     "numpy>=1.19"
 ]
 
 """
 Change Log
+0.3.2   2025-08-15   better background linking
+
+0.3.1   2025-06-18   emitters signature change
+
 0.3.0-pre 2024-09-22 workshop pre-release. removed a weird noncompatible typing hint
 
 0.2.7   2024-09-10 - correct directions of dependencies for treatment processes 

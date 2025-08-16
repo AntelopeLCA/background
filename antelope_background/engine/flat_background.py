@@ -245,6 +245,8 @@ class FlatBackground(BackgroundLayer):
                 term = tuple(k.term_ref.split('; '))  # de-serialize
                 naive_context = index.get_context(term)
                 canonical_context = index._tm[naive_context]  # not sure about this
+                if canonical_context is None:
+                    canonical_context = naive_context
                 self.context_map[k.term_ref] = canonical_context
 
     def __init__(self, foreground, background, exterior, af, ad, bf, lci_db=None, quiet=True):
@@ -451,24 +453,26 @@ class FlatBackground(BackgroundLayer):
             for i in self._af[idx, :].nonzero()[1]:
                 yield self._fg[i]
 
-    def emitters(self, flow_ref, direction, context=None):
+    def emitters(self, flow_ref, direction):
         """
-        We have to test whether our serialized context matches the canonical one that was submitted. we also want to
-        internalize context serialization (search term: '; ')
+        we don't need to pay attention to context at all because the query term is a flow, which already has an
+        implicit context
+
+        also, because the emission is a TermRef its direction is w/r/t the context. so we need comp_dir
         :param flow_ref:
         :param direction:
-        :param context: (canonical, "of query")
         :return:
         """
         yielded = set()
+        if direction:
+            cdir = comp_dir(direction)
+        else:
+            cdir = None
         for idx, ex in enumerate(self.ex):  # termination, flow_ref, direction
             if ex.flow_ref != flow_ref:
                 continue
-            if direction:
-                if ex.direction != direction:
-                    continue
-            if context:
-                if self.context_map.get(ex.term_ref) != context:
+            if cdir:
+                if ex.direction != cdir:
                     continue
             # found an eligible external flow
             for i in self._bf[idx, :].nonzero()[1]:

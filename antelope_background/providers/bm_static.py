@@ -7,6 +7,7 @@ import time
 from abc import ABC
 
 from antelope_core.archives import LcArchive, InterfaceError
+from ..engine.background_engine import AmbiguousTermination
 from ..engine.flat_background import FlatBackground, SUPPORTED_FILETYPES, ORDERING_SUFFIX
 from ..background.implementation import TarjanBackgroundImplementation, TarjanConfigureImplementation
 from .check_terms import termination_test
@@ -100,7 +101,7 @@ class TarjanBackground(LcArchive, ABC):
 
     def create_flat_background(self, query, save_after=None, prefer=None, **kwargs):
         """
-        Create an ordered background, save it, and instantiate it as a flat background
+        Create an ordered background, save it, and instantiate it as a flat background. Return None if unsuccessful.
         :param query: interface to use for the engine
         :param save_after: trigger save-after (note: does not override init value)
         :param prefer: specify preferred providers.  Because I am so sloppy, this routine has been written to accept
@@ -110,13 +111,9 @@ class TarjanBackground(LcArchive, ABC):
          iterable of 2-tuples: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
            *- for both of these, either flows or external_refs of flows can be passed as keys
            *- to prefer a process regardless of reference flow, use None as the flow_ref
+
          iterable of entries:
-                 Because I am so sloppy, this routine has been written to accept all kinds of possible formats for input:
-         dict: { flow_ref: process* } un-terminated flow-ref prefers named process
-           *- could be entity_type=process or external_ref of a process
-         iterable of 2-tuples: [(flow_ref, process_ref), ...] .. un-terminated flow prefers named process
-           *- for both of these, either flows or external_refs of flows can be passed as keys
-           *- to prefer a process regardless of reference flow, use None as the flow_ref
+
          list of processes: [process, ...] .. list of processes to prefer if an ambiguous match is encountered (legacy)
            * equivalent to a list of [(None, process), ...]
 
@@ -126,13 +123,19 @@ class TarjanBackground(LcArchive, ABC):
             prefer_dict = self._make_prefer_dict(prefer)
             print('Creating flat background')
             start = time.time()
-            self._flat = FlatBackground.from_query(query, preferred=prefer_dict, **kwargs)
+            try:
+                self._flat = FlatBackground.from_query(query, preferred=prefer_dict, **kwargs)
+            except AmbiguousTermination:
+                self._flat = None
+                return None
             self._add_name(query.origin, self.source, rewrite=True)
             print('Completed in %.3g sec' % (time.time() - start))
             if save_after or self._save_after:
                 self.write_to_file()  # otherwise, the user / catalog must explicitly request it
         else:
-            self._flat.map_contexts(query)
+            if self._flat.context_map is None:
+                print('CCCCCXXXXXX Mapping contexts to existing fb %s (%s)' % (query, type(query)))
+                self._flat.map_contexts(query)
         return self._flat
 
     def reset(self):

@@ -1,5 +1,5 @@
 from antelope_core.implementations import BackgroundImplementation, CoreConfigureImplementation
-from antelope import check_direction, comp_dir
+from antelope import check_direction, comp_dir, LinkingError
 from antelope.models import ExteriorFlow
 from antelope_core.exchanges import ExchangeValue  # these should be ExchangeRefs?
 from antelope_core.contexts import Context
@@ -86,6 +86,8 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
                 self._archive.reset()
             if hasattr(self._archive, 'create_flat_background'):
                 self._flat = self._archive.create_flat_background(self._index, **kwargs)
+                if self._flat is None:
+                    raise LinkingError('unable to create flat background')
             else:
                 raise ArchiveError('No create_flat_background: %s' % self._archive)  # how would we ever get here?
                 # self._flat = FlatBackground.from_index(self._index, **kwargs)
@@ -193,18 +195,17 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
         for x in self._flat.consumers(process, ref_flow):
             yield self._exchange_from_term_ref(x)
 
-    def emitters(self, flow, direction=None, context=None, **kwargs):
+    def emitters(self, flow, direction=None, **kwargs):
         """
         :param flow:
         :param direction: [None]
-        :param context: should be canonical, if provided
         :param kwargs:
         :return:
         """
         self.check_bg()
         if direction is not None:
             direction = check_direction(direction)
-        for x in self._flat.emitters(flow, direction, context):
+        for x in self._flat.emitters(flow, direction):
             yield self._exchange_from_term_ref(x)
 
     def product_models(self, **kwargs):
@@ -255,7 +256,7 @@ class TarjanBackgroundImplementation(BackgroundImplementation):
     def sys_lci(self, demand, **kwargs):
         self.check_bg()
         node = None
-        for x in self._flat.sys_lci(demand):
+        for x in self._flat.sys_lci(demand, **kwargs):
             if node is None:
                 node = self[x.process]
             yield ExchangeValue(node, self[x.flow], x.direction, termination=x.term, value=x.value)

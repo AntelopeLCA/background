@@ -103,8 +103,7 @@ class BackgroundLayer(ABC):
     def consumers(self, process_ref: str, ref_flow: str) -> Generator[TermRef, None, None]:
         raise NotImplementedError
 
-    def emitters(self, process_ref: str, ref_flow: str,
-                 context: Optional[Context] = None) -> Generator[TermRef, None, None]:
+    def emitters(self, process_ref: str, ref_flow: str) -> Generator[TermRef, None, None]:
         raise NotImplementedError
 
     def dependencies(self, process_ref: str, ref_flow: str) -> Generator[ExchDef, None, None]:
