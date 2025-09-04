@@ -33,7 +33,7 @@ def termination_test(query, prefer=None, strict=False):
             raise ValueError('Bad preferred provider %s for flow %s' % (v, k))
 
     ct = CheckTerms(query)
-    ambiguous = [af for af in ct.ambiguous_flows() if af.external_ref not in prefer.keys()]
+    ambiguous = [af for af in ct.ambiguous_flows if af.external_ref not in prefer.keys()]
 
     if len(ambiguous) > 0:
         print('Found %d ambiguous flows' % len(ambiguous))
