@@ -327,6 +327,8 @@ class BackgroundEngine(object):
 
         if (exch.flow.external_ref, exch.direction, exch.termination) in self._emissions:
             return None
+        if exch.type == 'context':
+            return None
         if exch.flow.external_ref in self._preferred_processes:
             term = self._preferred_processes[exch.flow.external_ref]
             if term is None:
